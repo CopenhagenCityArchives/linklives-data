@@ -61,6 +61,12 @@ personal appearance itself. For the `links` and `lifecourses` indices it
 contains a list of the related personal appearances. This allows nested
 querying across the different indices/document types.
 
+### Simple frontend
+A simple HTML/native JS frontend for the elasticsearch indices is found in
+`browser/browser.html`. A http server running at localhost can be used to
+deliver it (due to CORS), for example `python -m http.server` executed in the
+`browser` directory.
+
 Neo4j structure
 ---------------
 
