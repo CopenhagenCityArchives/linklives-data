@@ -3,7 +3,9 @@ version: '2'
 services:
   ll-es:
     container_name: ll-es
-    image: elasticsearch:7.4.2
+    build:
+      dockerfile: elasticsearch.Dockerfile
+      context: .
     ports: 
       - "9200:9200"
       - "9300:9300"
