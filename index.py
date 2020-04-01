@@ -79,7 +79,9 @@ def index_graph_links(sqlite_db, neo4j):
 def index_nested(sqlite_db, es):
     with open('lifecourses_full_sorted.sql', 'r', encoding='utf-8') as sqlfile:
         query = sqlfile.read()
+    print("indexing nested")
 
+    print(" => getting data")
     with sqlite3.connect(sqlite_db) as sqlite:
         sqlite.row_factory = sqlite3.Row
         c = sqlite.cursor()
@@ -87,18 +89,26 @@ def index_nested(sqlite_db, es):
         last_link_id = None
         life_course = {}
         link = []
+        lifecourse_count = 0
+        pa_count = 0
+        link_count = 0
         for row in c.execute(query):
             index_nested_pa(row)
+            pa_count += 1
             if life_course and last_life_course_id != row['life_course_id']:
                 index_nested_lifecourse(life_course)
                 life_course = {}
+                lifecourse_count += 1
             if link and last_link_id != row['link_id']:
                 index_nested_link(link)
                 link = []
+                link_count += 1
             life_course[row['pa_id']] = row
             link.append(row)
             last_life_course_id = row['life_course_id']
             last_link_id = row['link_id']
+            print(f" => personal appearances: {pa_count}, links: {link_count}, life courses: {lifecourse_count}", end="\r")
+        print()
 
 def index_nested_pa(pa):
     doc = {
@@ -209,7 +219,7 @@ def es_mappings_index_pas():
 if __name__ == "__main__":
     import sys
     if sys.argv[1] == 'es':
-        es = Elasticsearch(hosts=["localhost:9200", "localhost:9300"])
+        es = Elasticsearch(hosts=["52.215.59.213:1234", "52.215.59.213:9300"])
         if len(sys.argv) == 3 and sys.argv[2] == "setup":
             print("deleting indices")
             try:
