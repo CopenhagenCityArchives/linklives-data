@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>LinkLives Browse &amp; Search</title>
+    <meta charset="utf-8" />
+    <style>
+        .container {
+            margin: 0 auto;
+            width: 1024px;
+        }
+
+        .pa {
+            display: inline-block;
+            margin: 5px;
+            background: lightgrey;
+        }
+
+        .field.label {
+            font-weight: bold;
+            margin-right: 5px;
+        }
+    </style>
+    <script src="./app.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <h1>LinkLives Browse &amp; Search</h1>
+
+        <form id="search_form" action="#">
+            <div><input id="form_firstnames" type="text" placeholder="First names"></div>
+            <div><input type="submit" /></div>
+        </form>
+
+        <div id="search_status"></div>
+
+        <div><input type="button" value="next"  id="search_next"></div>
+
+        <ul id="search_results">
+        </ul>
+    </div>
+
+    <script>
+        window.onload = ev => {
+            let form = document.getElementById("search_form");
+            form.onsubmit = search_new;
+
+            let next = document.getElementById("search_next");
+            next.onclick = search_next;
+        }
+    </script>
+</body>
+
+</html>
