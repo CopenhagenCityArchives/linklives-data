@@ -4,6 +4,7 @@ from elasticsearch.exceptions import NotFoundError as ESNotFoundError
 from math import ceil
 import requests
 
+
 def index(sqlite_db, es):
     print(" => reading sources")
     sources = list(read_sources(sqlite_db))
@@ -12,39 +13,18 @@ def index(sqlite_db, es):
     readers = {source['source_id']: {'reader': read_source_chunks(sqlite_db, source), 'pointer': 0, 'data': None} for source in sources}
 
     print(" => indexing data")
+    life_course_count = 0
     pa_count = 0
     link_count = 0
-    life_course_count = 0
     while True:
-        candidates = []
-        for source in sources:
-            reader = readers[source['source_id']]
+        life_course_id = get_life_course_id(readers)
 
-            # load new chunk from source, if unloaded or fully comsumed
-            if reader['data'] is None or reader['pointer'] == len(reader['data']):
-                reader['data'] = next(reader['reader'])
-                reader['pointer'] = 0
-            
-            # skip adding candidates from fully consumed sources
-            if len(reader['data']) > 0:
-                candidates.append({'data': dict(reader['data'][reader['pointer']]), 'source_id': source['source_id']})
-        
-        # no more candidates could be loaded, we stop
-        if not candidates:
+        # this means no more data
+        if life_course_id is None:
             break
         
-        # the minimal life course id can be used to construct a life course
-        life_course_id = min(candidates, key=lambda candidate: candidate['data']['life_course_id'])['data']['life_course_id']
-        life_course = []
-        for candidate in candidates:
-            if candidate['data']['life_course_id'] == life_course_id:
-                life_course.append(candidate['data'])
-                readers[candidate['source_id']]['pointer'] += 1
-                # index the pa when added to life course, because it wont be read anymore
-                index_pa(candidate['data'])
-                pa_count += 1
-            else:
-                continue
+        life_course = generate_life_course(readers, life_course_id)
+        pa_count += len(set([(pa['pa_id'], pa['source_id']) for pa in life_course]))
         
         # generate the links of the life course
         links = {}
@@ -53,15 +33,63 @@ def index(sqlite_db, es):
                 links[pa['link_id']] = [pa]
             else:
                 links[pa['link_id']].append(pa)
-        
-        for link_id in links:
-            index_link(links[link_id])
+
+        for link in links.values():
+            index_link(link)
             link_count += 1
 
         index_life_course(life_course)
         life_course_count += 1
 
         print(f" => personal appearances: {pa_count}, links: {link_count}, life courses: {life_course_count}", end="\r")
+
+
+def get_life_course_id(readers):
+    life_course_id = None
+    
+    for source_id in readers:
+        data = reader_peek(readers, source_id)
+
+        if data is not None and (life_course_id is None or life_course_id > data['life_course_id']):
+            life_course_id = data['life_course_id']
+    
+    return life_course_id
+
+
+def reader_peek(readers, source_id):
+    reader = readers[source_id]
+
+    if reader['data'] is None or reader['pointer'] == len(reader['data']):
+            reader['data'] = next(reader['reader'])
+            reader['pointer'] = 0
+    
+    if len(reader['data']) > 0:
+        return reader['data'][reader['pointer']]
+
+
+def generate_life_course(readers, life_course_id):
+    life_course = []
+
+    for source_id in readers:
+        data = reader_peek(readers, source_id)
+        if data['life_course_id'] == life_course_id:
+            life_course.append(data)
+            readers[source_id]['pointer'] += 1
+
+            # index the pa when added to life course, because it wont be read anymore
+            index_pa(data)
+        else:
+            # go to next reader to prevent unneccesary double check
+            continue
+
+        # handle pas being part of two links by getting the next too
+        data = reader_peek(readers, source_id)
+        if data['life_course_id'] == life_course_id:
+            life_course.append(data)
+            readers[source_id]['pointer'] += 1
+
+    return life_course
+
 
 def read_sources(sqlite_db):
     with sqlite3.connect(sqlite_db) as sqlite:
@@ -77,7 +105,7 @@ def read_source_chunks(sqlite_db, source):
         count = list(c.execute(f'SELECT count(*) as count FROM {source["table_name"]}'))[0]['count']
         offset = 0
         while offset < count:
-            yield list(c.execute(f"SELECT * FROM {source['table_name']} p JOIN Links l ON l.source_id = {source['source_id']} AND l.pa_id = p.pa_id JOIN Life_courses lc ON lc.link_id = l.link_id ORDER BY lc.life_course_id, l.link_id ASC LIMIT {offset},100"))
+            yield list(c.execute(f"SELECT * FROM {source['table_name']} p JOIN Links l ON l.source_id = {source['source_id']} AND l.pa_id = p.pa_id JOIN Life_courses lc ON lc.link_id = l.link_id ORDER BY lc.life_course_id, l.link_id, p.pa_id ASC LIMIT {offset},100"))
             offset += 100
 
 def index_pa(pa):
@@ -96,6 +124,8 @@ def index_life_course(life_course):
     doc = {
         "personal_appearance": list(map(lambda row: {key: row[key] for key in dict(row) if row[key] != ""}, life_course))
     }
+    if len(life_course) == 1:
+        raise Exception(life_course)
     es.index(index='lifecourses', id=list(life_course)[0]['life_course_id'], body=doc)
 
 def mapping_pa():
