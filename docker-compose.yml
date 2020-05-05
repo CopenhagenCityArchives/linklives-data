@@ -11,12 +11,3 @@ services:
       - "9300:9300"
     environment:
       discovery.type: single-node
-  ll-neo4j:
-    container_name: ll-nea4j
-    image: neo4j:3.5.3
-    ports:
-      - 7474:7474
-      - 7473:7473
-      - 7687:7687
-    environment:
-      - NEO4J_AUTH=neo4j/123456
