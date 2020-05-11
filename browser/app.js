@@ -22,13 +22,13 @@ async function search(ev) {
             size: size,
             query: {
                 nested: {
-                    path: "personal_appearance",
+                    path: "person_appearance",
                     query: {
                         bool: {
                             must: [
                                 {
                                     match: {
-                                        "personal_appearance.firstnames_std": firstNames
+                                        "person_appearance.firstnames_std": firstNames
                                     }
                                 }
                             ]
@@ -57,10 +57,10 @@ function renderHit(hit, resultsElement) {
     renderField(metaElement, "Score", hit._score);
 
     resultElement.appendChild(metaElement);
-    if (Array.isArray(hit._source.personal_appearance)) {
-        hit._source.personal_appearance.forEach(pa => renderPA(pa, resultElement));
+    if (Array.isArray(hit._source.person_appearance)) {
+        hit._source.person_appearance.forEach(pa => renderPA(pa, resultElement));
     } else {
-        renderPA(hit._source.personal_appearance, resultElement);
+        renderPA(hit._source.person_appearance, resultElement);
     }
     resultsElement.appendChild(resultElement);
 }

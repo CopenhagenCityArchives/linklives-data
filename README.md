@@ -2,7 +2,7 @@ LinkLives Data
 ==============
 
 This repository contains a tool to index a SQLite database with link-lives data
-(personal appearances, links and life courses). The indexing can be done
+(person appearances, links and life courses). The indexing can be done
 against elasticsearch or neo4j. In both cases the python script `index.py` is
 used.
 
@@ -35,7 +35,7 @@ Running the indexing script
 
 The `index.py` script accepts a few different commands
 
- * `index.py graph nodes` indexes the nodes (ie. personal appearances) of the
+ * `index.py graph nodes` indexes the nodes (ie. person appearances) of the
    link-lives graph. This must be performed before indexing the links.
 
  * `index.py graph links` indexes the edges (ie. links) of the link-lives
@@ -44,21 +44,21 @@ The `index.py` script accepts a few different commands
  * `index.py es setup` creates the elasticsearch indices and sets up the
    mappings of them. This must be done before indexing the documents.
 
- * `index.py es` indexes the personal appearance, link, and life course
+ * `index.py es` indexes the person appearance, link, and life course
    documents in the elasticsearch database. The setup must have created
    the indices beforehand.
 
 Elasticsearch structure
 -----------------------
 
-The elasticsearch instance is given three indices: `pas` for personal
+The elasticsearch instance is given three indices: `pas` for person
 appearance documents, `links` for link documents, and `lifecourses` for life
 course documents.
 
 Each of these indices is given a mapping with a nested property
-`personal_apperance`, which in the case of the `pas`-index is simply the
-personal appearance itself. For the `links` and `lifecourses` indices it
-contains a list of the related personal appearances. This allows nested
+`person_apperance`, which in the case of the `pas`-index is simply the
+person appearance itself. For the `links` and `lifecourses` indices it
+contains a list of the related person appearances. This allows nested
 querying across the different indices/document types.
 
 ### Simple frontend
@@ -71,5 +71,5 @@ Neo4j structure
 ---------------
 
 The neo4j database is indexed with nodes labelled `PersonAppearance` that
-contain the personal appearance document, and edges labelled `LifeLink`
+contain the person appearance document, and edges labelled `LifeLink`
 that contain the link and life course metadata.

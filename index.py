@@ -4,8 +4,10 @@ from elasticsearch.exceptions import NotFoundError as ESNotFoundError
 from math import ceil
 import requests
 
+
 CHUNK_SIZE = 10000
 PA_IGNORE_KEYS = ["life_course_id", "link_id", "method_id", "score"]
+
 
 def index(sqlite_db, es):
     print(" => reading sources")
@@ -44,7 +46,7 @@ def index(sqlite_db, es):
         index_life_course(life_course_id, life_course)
         life_course_count += 1
 
-        print(f" => personal appearances: {pa_count}, links: {link_count}, life courses: {life_course_count}", end="\r")
+        print(f" => person appearances: {pa_count}, links: {link_count}, life courses: {life_course_count}", end="\r")
 
 
 def get_life_course_id(readers):
@@ -75,7 +77,7 @@ def generate_life_course(readers, life_course_id):
 
     for source_id in readers:
         data = reader_peek(readers, source_id)
-        if data['life_course_id'] == life_course_id:
+        if data is not None and data['life_course_id'] == life_course_id:
             life_course.append(data)
             readers[source_id]['pointer'] += 1
 
@@ -101,6 +103,7 @@ def read_sources(sqlite_db):
         for row in c.execute("SELECT * FROM Sources"):
             yield dict(row)
 
+
 def read_source_chunks(sqlite_db, source):
     with sqlite3.connect(sqlite_db) as sqlite:
         sqlite.row_factory = sqlite3.Row
@@ -111,9 +114,10 @@ def read_source_chunks(sqlite_db, source):
             yield list(c.execute(f"SELECT * FROM {source['table_name']} p JOIN Links l ON l.source_id = {source['source_id']} AND l.pa_id = p.pa_id JOIN Life_courses lc ON lc.link_id = l.link_id ORDER BY lc.life_course_id, l.link_id, p.pa_id ASC LIMIT {offset},{CHUNK_SIZE}"))
             offset += CHUNK_SIZE
 
+
 def index_pa(pa):
     doc = {
-        "personal_appearance": {
+        "person_appearance": {
             key: pa[key]
             for key in dict(pa)
             if key not in PA_IGNORE_KEYS and pa[key] != ""
@@ -121,14 +125,15 @@ def index_pa(pa):
     }
     es.index(index="pas", id=f"{pa['source_id']}-{pa['pa_id']}", body=doc)
 
+
 def index_link(link_id, life_course_id, pas):
     doc = {
         'link_id': link_id,
         'life_course_ids': [life_course_id],
-        'personal_appearance': []
+        'person_appearance': []
     }
     for pa in pas:
-        doc['personal_appearance'].append({
+        doc['person_appearance'].append({
             key: pa[key]
             for key in dict(pa)
             if key not in PA_IGNORE_KEYS and pa[key] != ""
@@ -147,13 +152,17 @@ def index_link(link_id, life_course_id, pas):
     }
     es.update(index="links", id=link_id, body=body)
 
+
 def index_life_course(life_course_id, pas):
     doc = {
         'life_course_id': life_course_id,
-        'personal_appearance': []
+        'person_appearance': []
     }
     for pa in pas:
-        doc['personal_appearance'].append({
+        # skip duplicates
+        if any([doc_pa['source_id'] == pa['source_id'] and doc_pa['pa_id'] == pa['pa_id'] for doc_pa in doc['person_appearance']]):
+            continue
+        doc['person_appearance'].append({
             key: pa[key]
             for key in dict(pa)
             if key not in PA_IGNORE_KEYS and pa[key] != ""
@@ -213,7 +222,7 @@ def mappings_index_lifecourses():
         "dynamic": False,
         "properties": {
             "life_course_id": {"type": "integer"},
-            "personal_appearance": {
+            "person_appearance": {
                 "type": "nested",
                 "properties": mapping_pa_properties()
             }
@@ -228,7 +237,7 @@ def mappings_index_links():
             "method": {"type": "keyword"},
             "score": {"type": "float"},
             "life_course_ids": {"type": "integer"},
-            "personal_appearance": {
+            "person_appearance": {
                 "type": "nested",
                 "properties": mapping_pa_properties()
             }
@@ -239,7 +248,7 @@ def mappings_index_pas():
     return {
         "dynamic": False,
         "properties": {
-            "personal_appearance": {
+            "person_appearance": {
                 "type": "nested",
                 "properties": mapping_pa_properties()
             }
