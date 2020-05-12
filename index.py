@@ -89,7 +89,7 @@ def generate_life_course(readers, life_course_id):
 
         # handle pas being part of two links by getting the next too
         data = reader_peek(readers, source_id)
-        if data['life_course_id'] == life_course_id:
+        if data is not None and data['life_course_id'] == life_course_id:
             life_course.append(data)
             readers[source_id]['pointer'] += 1
 
