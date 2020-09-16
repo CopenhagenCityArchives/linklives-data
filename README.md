@@ -13,9 +13,6 @@ It is assumed, depending on which type of indexing is performed, that
 
  * an elasticsearch instance is running on `localhost` at ports 9200 to 9300,
    or
- 
- * a neo4j instance is running on `localhost` and is accessible on the `bolt`
-   protocol at port 7687.
 
 A `docker-compose.yml` is provided with services covering these requirements
 (services `ll-es`, and `ll-neo4j` respectively).
@@ -26,25 +23,17 @@ Dependencies
 
 The following python packages are dependencies
 
- * neo4j
  * elasticsearch
- * requests
 
 Running the indexing script
 ---------------------------
 
 The `index.py` script accepts a few different commands
 
- * `index.py graph nodes` indexes the nodes (ie. person appearances) of the
-   link-lives graph. This must be performed before indexing the links.
-
- * `index.py graph links` indexes the edges (ie. links) of the link-lives
-   graph. The nodes must already be indexed.
-
- * `index.py es setup` creates the elasticsearch indices and sets up the
+ * `index.py setup` creates the elasticsearch indices and sets up the
    mappings of them. This must be done before indexing the documents.
 
- * `index.py es` indexes the person appearance, link, and life course
+ * `index.py index <SQLITE DB>` indexes the person appearance, link, and life course
    documents in the elasticsearch database. The setup must have created
    the indices beforehand.
 
@@ -66,10 +55,3 @@ A simple HTML/native JS frontend for the elasticsearch indices is found in
 `browser/browser.html`. A http server running at localhost can be used to
 deliver it (due to CORS), for example `python -m http.server` executed in the
 `browser` directory.
-
-Neo4j structure
----------------
-
-The neo4j database is indexed with nodes labelled `PersonAppearance` that
-contain the person appearance document, and edges labelled `LifeLink`
-that contain the link and life course metadata.

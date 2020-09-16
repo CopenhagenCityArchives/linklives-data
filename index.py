@@ -2,8 +2,6 @@ import sqlite3
 from elasticsearch import Elasticsearch
 from elasticsearch.exceptions import NotFoundError as ESNotFoundError
 from math import ceil
-import requests
-
 
 CHUNK_SIZE = 10000
 PA_IGNORE_KEYS = ["life_course_id", "link_id", "method_id", "score"]
@@ -20,7 +18,9 @@ def index(sqlite_db, es):
     life_course_count = 0
     pa_count = 0
     link_count = 0
+    print_counter = 0
     while True:
+        print_counter += 1
         life_course_id = get_life_course_id(readers)
 
         # this means no more data
@@ -46,7 +46,10 @@ def index(sqlite_db, es):
         index_life_course(life_course_id, life_course)
         life_course_count += 1
 
-        print(f" => person appearances: {pa_count}, links: {link_count}, life courses: {life_course_count}", end="\r")
+        if print_counter == 100:
+            print_counter = 0
+            print(f" => person appearances: {pa_count}, links: {link_count}, life courses: {life_course_count}", end="\r")
+    print(f" => person appearances: {pa_count}, links: {link_count}, life courses: {life_course_count}")
 
 
 def get_life_course_id(readers):
@@ -259,8 +262,8 @@ def mappings_index_pas():
 if __name__ == "__main__":
     import sys
     import os
-    #es = Elasticsearch(hosts=["52.215.59.213:1234", "52.215.59.213:9300"])
-    es = Elasticsearch(hosts=["localhost:9200", "localhost:9300"])
+    es = Elasticsearch(hosts=["52.215.59.213:1234", "52.215.59.213:9300"])
+    #es = Elasticsearch(hosts=["localhost:9200", "localhost:9300"])
     if len(sys.argv) == 2 and sys.argv[1] == "setup":
         print("deleting indices")
         try:
