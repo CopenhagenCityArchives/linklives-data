@@ -262,8 +262,8 @@ def mappings_index_pas():
 if __name__ == "__main__":
     import sys
     import os
-    es = Elasticsearch(hosts=["52.215.59.213:1234", "52.215.59.213:9300"])
-    #es = Elasticsearch(hosts=["localhost:9200", "localhost:9300"])
+    #es = Elasticsearch(hosts=["52.215.59.213:1234", "52.215.59.213:9300"])
+    es = Elasticsearch(hosts=["ll-es:80"])
     if len(sys.argv) == 2 and sys.argv[1] == "setup":
         print("deleting indices")
         try:
@@ -291,4 +291,6 @@ if __name__ == "__main__":
         index(sys.argv[2], es)
     else:
         print('argument error')
+        if len(sys.argv) == 3 and not os.path.exists(sys.argv[2]):
+            print('the specified file does not exist')
         sys.exit(1)
