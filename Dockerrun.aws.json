@@ -1,0 +1,69 @@
+{
+    "AWSEBDockerrunVersion": 2,
+    "volumes": [
+        {
+            "name": "indexer-code",
+            "host": {
+                "sourcePath": "/var/app/current/indexer"
+            }
+        },
+        {
+            "name": "indexer-data",
+            "host": {
+                "sourcePath": "/var/app/current/indexer-data"
+            }
+        }
+    ],
+    "containerDefinitions": [
+        {
+            "name": "linklives-elasticsearch",
+            "image": "282251075226.dkr.ecr.eu-west-1.amazonaws.com/linklives-elasticsearch:latest",
+            "essential": true,
+            "memory": 512,
+            "environment":[
+                {
+                    "name": "discovery.type",
+                    "value": "single-node"
+                }
+            ],
+            "portMappings": [
+                {
+                    "hostPort": 80,
+                    "containerPort": 9200
+                },
+                {
+                    "hostPort": 9300,
+                    "containerPort": 9300                  
+                }
+              ]
+        },
+        {
+            "name": "indexer",
+            "image": "python:3.7",
+            "essential": false,
+            "memory": 128,
+            "command": ["bash -c 'pip install -r requirements.txt && aws s3 cp s3://linklives-data/LL_v0.2.db /indexer-data/linklives-data-latest.db && python /indexer/index.py setup && python /indexer/index.py index /indexer-data/linklives-data-latest.db'"],
+            "portMappings": [
+                {
+                    "hostPort": 80,
+                    "containerPort": 80
+                }
+            ],
+            "links": [
+                "linklives-elasticsearch"
+            ],
+            "mountPoints": [
+                {
+                    "sourceVolume": "indexer-code",
+                    "containerPath": "/indexer",
+                    "readOnly": false
+                },
+                {
+                    "sourceVolume": "indexer-data",
+                    "containerPath": "/indexer-data",
+                    "readOnly": true
+                }
+            ]
+        }
+    ]
+}
