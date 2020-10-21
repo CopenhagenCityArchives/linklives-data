@@ -291,6 +291,7 @@ if __name__ == "__main__":
         index(sys.argv[2], es)
     else:
         print('argument error')
-        if len(sys.argv) == 3 and not os.path.exists(sys.argv[2]):
+
+        if not os.path.exists(sys.argv[2]):
             print('the specified file does not exist')
         sys.exit(1)
