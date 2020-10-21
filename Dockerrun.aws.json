@@ -10,7 +10,7 @@
         {
             "name": "indexer-data",
             "host": {
-                "sourcePath": "/var/app/current/indexer-data"
+                "sourcePath": "/tmp/linklives-data"
             }
         }
     ],
@@ -19,7 +19,7 @@
             "name": "linklives-elasticsearch",
             "image": "282251075226.dkr.ecr.eu-west-1.amazonaws.com/linklives-elasticsearch:latest",
             "essential": true,
-            "memory": 512,
+            "memory": 2500,
             "environment":[
                 {
                     "name": "discovery.type",
@@ -35,14 +35,25 @@
                     "hostPort": 9300,
                     "containerPort": 9300                  
                 }
-              ]
+              ],
+              "mountPoints": [
+                {
+                    "sourceVolume": "indexer-code",
+                    "containerPath": "/indexer",
+                    "readOnly": false
+                },
+                {
+                    "sourceVolume": "indexer-data",
+                    "containerPath": "/indexer-data",
+                    "readOnly": true
+                }
+            ]
         },
         {
             "name": "indexer",
-            "image": "python:3.7",
+            "image": "282251075226.dkr.ecr.eu-west-1.amazonaws.com/linklives-indexer:latest",
             "essential": false,
-            "memory": 128,
-            "command": ["bash -c 'pip install -r requirements.txt && aws s3 cp s3://linklives-data/LL_v0.2.db /indexer-data/linklives-data-latest.db && python /indexer/index.py setup && python /indexer/index.py index /indexer-data/linklives-data-latest.db'"],
+            "memory": 1024,
             "links": [
                 "linklives-elasticsearch"
             ],
