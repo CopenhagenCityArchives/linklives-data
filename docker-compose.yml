@@ -5,9 +5,21 @@ services:
     container_name: ll-es
     build:
       dockerfile: elasticsearch.Dockerfile
-      context: .
+      context: ./elasticsearch
     ports: 
-      - "9200:9200"
+      - "80:9200"
       - "9300:9300"
     environment:
       discovery.type: single-node
+  indexer:
+    container_name: indexer
+    build: 
+      dockerfile: indexer.Dockerfile
+      context: ./indexer
+    volumes:
+      - ./indexer:/indexer
+    command: bash -c 'python /indexer/index.py setup && python /indexer/index.py index \\form1\FORMARKIV\LinkLives\LL_v0.2.db'
+    depends_on:
+      - ll-es
+    links:
+      - ll-es
