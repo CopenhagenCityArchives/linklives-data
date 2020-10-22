@@ -2,6 +2,7 @@ import sqlite3
 from elasticsearch import Elasticsearch
 from elasticsearch.exceptions import NotFoundError as ESNotFoundError
 from math import ceil
+from pathlib import Path
 
 CHUNK_SIZE = 10000
 PA_IGNORE_KEYS = ["life_course_id", "link_id", "method_id", "score"]
@@ -259,11 +260,98 @@ def mappings_index_pas():
     }
 
 
+def read_csv(path, delimiter='$'):
+    headers = None
+    with open(path, 'r', encoding='utf-8') as f:
+        headers = next(f).strip().split(delimiter)
+        for line in f:
+            yield { header: None if value == '' else value for (header, value) in zip(headers, line.strip().split(delimiter)) }
+
+
+def csv_index_life_course(es, life_course):
+    doc = {
+        'life_course_id': life_course[''],
+        'person_appearance': []
+    }
+    es.index(index="lifecourses", id=life_course[''], body=doc)
+
+
+def csv_index_link(es, link):
+    pass
+
+
+def csv_index_pa(es, pa, life_courses):
+    pa = {
+        'pa_id': pa['id'],
+        'gender': pa['gender'],
+        'age': pa['age'],
+        'age_clean': pa['age_clean'],
+        'name': pa['name'],
+        'name_std': pa['name_std']
+    }
+
+    for life_course_id in life_courses:
+        print(life_course_id, pa['name'])
+        body = {
+            "script": {
+                "source": "ctx._source.person_appearance.add(params.pa)",
+                "lang": "painless",
+                "params": {
+                    "pa": pa
+                }
+            }
+        }
+        es.update(index="lifecourses", id=life_course_id, body=body)
+
+    
+
+
+def csv_index(es, path):
+    csv_dir = Path(path)
+    life_courses = {}
+    links = {}
+    pa_life_courses = {}
+        
+    for csv in [f for f in csv_dir.iterdir() if f.suffix == '.csv' and f.stem.startswith('life_courses')]:
+        print('loading life course data from',csv)
+        for item in read_csv(csv):
+            life_courses[item['']] = item
+            for key in item:
+                if key in ('', 'occurences'):
+                    continue
+                if (item[key], key) not in pa_life_courses:
+                    pa_life_courses[(item[key], key)] = set()
+                pa_life_courses[(item[key], key)].add(item[''])
+
+    print(f'loaded {len(life_courses)} life courses')
+    for csv in [f for f in csv_dir.iterdir() if f.suffix == '.csv' and f.stem.startswith('links')]:
+        print('loading link data from',csv)
+        for item in read_csv(csv):
+            links[item['link_id']] = item
+
+    print(f'indexing empty life courses')
+    for life_course in life_courses.values():
+        csv_index_life_course(es, life_course)
+
+    print(f'indexing empty links')
+    for link in links.values():
+        csv_index_link(es, link)
+
+    print(f'loaded {len(links)} links')
+    for csv in [f for f in csv_dir.iterdir() if f.suffix == '' and f.stem.startswith('census')]:
+        print('indexing census data from',csv)
+        for item in read_csv(csv):
+            try:
+                if (item['id'], item['source_year']) in pa_life_courses:
+                        csv_index_pa(es, item, pa_life_courses[(item['id'], item['source_year'])])
+            except:
+                print(item)
+
 if __name__ == "__main__":
     import sys
     import os
     #es = Elasticsearch(hosts=["52.215.59.213:1234", "52.215.59.213:9300"])
-    es = Elasticsearch(hosts=["ll-es:80"])
+    es = Elasticsearch(hosts=["https://data.link-lives.dk"])
     if len(sys.argv) == 2 and sys.argv[1] == "setup":
         print("deleting indices")
         try:
@@ -286,9 +374,12 @@ if __name__ == "__main__":
         es.indices.create('pas')
         print(" => putting pas mapping")
         es.indices.put_mapping(index='pas', body=mappings_index_pas())
-    elif len(sys.argv) == 3 and os.path.exists(sys.argv[2]):
+    elif len(sys.argv) == 3 and sys.argv[1] == 'index' and os.path.exists(sys.argv[2]):
         print(f'indexing {sys.argv[2]}')
         index(sys.argv[2], es)
+    elif len(sys.argv) == 3 and sys.argv[1] == 'csv-index' and os.path.exists(sys.argv[2]):
+        print(f'indexing csv files at {sys.argv[2]}')
+        csv_index(es, sys.argv[2])
     else:
         print('argument error')
 
