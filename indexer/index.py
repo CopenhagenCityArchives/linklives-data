@@ -290,6 +290,11 @@ def csv_index_pa(es, pa, life_courses):
         'name_std': pa['name_std']
     }
 
+    # index pa into pas
+    
+    # index pa into links
+
+    # index pa into life courses
     for life_course_id in life_courses:
         print(life_course_id, pa['name'])
         body = {
@@ -311,17 +316,27 @@ def csv_index(es, path):
     life_courses = {}
     links = {}
     pa_life_courses = {}
-        
+
     for csv in [f for f in csv_dir.iterdir() if f.suffix == '.csv' and f.stem.startswith('life_courses')]:
         print('loading life course data from',csv)
+        i = 1
         for item in read_csv(csv):
-            life_courses[item['']] = item
+            life_course_id = item['']
+            life_courses[life_course_id] = item
+
+            # loop over pa ids in life course
             for key in item:
+                # skip key for id and occurences, then only source year keys remain
                 if key in ('', 'occurences'):
                     continue
-                if (item[key], key) not in pa_life_courses:
-                    pa_life_courses[(item[key], key)] = set()
-                pa_life_courses[(item[key], key)].add(item[''])
+                source_year = key
+                pa_id = item[key]
+                if (pa_id, source_year) not in pa_life_courses:
+                    pa_life_courses[(pa_id, source_year)] = set()
+                pa_life_courses[(pa_id, source_year)].add(life_course_id)
+            if i > 1000:
+                break
+            i += 1
 
     print(f'loaded {len(life_courses)} life courses')
     for csv in [f for f in csv_dir.iterdir() if f.suffix == '.csv' and f.stem.startswith('links')]:
@@ -338,12 +353,14 @@ def csv_index(es, path):
         csv_index_link(es, link)
 
     print(f'loaded {len(links)} links')
-    for csv in [f for f in csv_dir.iterdir() if f.suffix == '' and f.stem.startswith('census')]:
+    #for csv in [f for f in csv_dir.iterdir() if f.suffix == '' and f.stem.startswith('census')]:
+    for csv in [f for f in csv_dir.iterdir() if f.stem in ('census_1901', 'census_1885')]:
         print('indexing census data from',csv)
         for item in read_csv(csv):
             try:
                 if (item['id'], item['source_year']) in pa_life_courses:
-                        csv_index_pa(es, item, pa_life_courses[(item['id'], item['source_year'])])
+                    life_course_ids = pa_life_courses[(item['id'], item['source_year'])]
+                    csv_index_pa(es, item, life_course_ids)
             except:
                 print(item)
 
