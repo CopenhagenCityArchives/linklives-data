@@ -476,10 +476,26 @@ def csv_index(es, path):
 if __name__ == "__main__":
     import sys
     import os
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Index link lives data')
+
+    subparsers = parser.add_subparsers(help='The command to run.', dest='cmd')
+
+    setup_parser = subparsers.add_parser('setup')
+
+    index_parser = subparsers.add_parser('index')
+    index_parser.add_argument('--csv-dir', type=lambda p: Path(p).resolve(), required=True)
+
+    index_sqlite_parser = subparsers.add_parser('index-sqlite')
+    index_sqlite_parser.add_argument('--sqlite-db', type=lambda p: Path(p).resolve(), required=True)
+
+    args = parser.parse_args()
+    
     #es = Elasticsearch(hosts=["52.215.59.213:1234", "52.215.59.213:9300"])
     es = Elasticsearch(hosts=["localhost:80"])
     es.info()
-    if len(sys.argv) == 2 and sys.argv[1] == "setup":
+    if args.cmd == 'setup':
         print("deleting indices")
         try:
             es.indices.delete("links,lifecourses,pas")
@@ -501,15 +517,17 @@ if __name__ == "__main__":
         es.indices.create('pas')
         print(" => putting pas mapping")
         es.indices.put_mapping(index='pas', body=mappings_index_pas())
-    elif len(sys.argv) == 3 and sys.argv[1] == 'index' and os.path.exists(sys.argv[2]):
-        print(f'indexing {sys.argv[2]}')
-        index(sys.argv[2], es)
-    elif len(sys.argv) == 3 and sys.argv[1] == 'csv-index' and os.path.exists(sys.argv[2]):
-        print(f'indexing csv files at {sys.argv[2]}')
-        csv_index(es, sys.argv[2])
+    elif args.cmd == 'index-sqlite':
+        if not args.sqlite_db.is_file():
+            print(f"could not find sqlite db {args.sqlite_db}")
+            sys.exit(1)
+        print(f'indexing {args.sqlite_db}')
+        index(str(args.sqlite_db), es)
+    elif args.cmd == 'index':
+        if not args.csv_dir.is_dir():
+            print(f'Path does not exist or is not a directory: {args.csv_dir}')
+        print(f'indexing csv files at {args.csv_dir}')
+        csv_index(es, str(args.csv_dir))
     else:
         print('argument error')
-
-        if not os.path.exists(sys.argv[2]):
-            print('the specified file does not exist')
         sys.exit(1)
