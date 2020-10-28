@@ -1,7 +1,7 @@
 import sqlite3
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
-from elasticsearch.exceptions import NotFoundError as ESNotFoundError
+from elasticsearch.exceptions import RequestError
 from math import ceil
 from pathlib import Path
 
@@ -410,7 +410,7 @@ def csv_index(es, path):
     pa_life_courses = {}
     pa_links = {}
     for csv in [f for f in csv_dir.iterdir() if f.suffix == '.csv' and f.stem.startswith('life_courses')]:
-        print('loading life course data from',csv)
+        print(' => Loading life course data from',csv)
         for item in read_csv(csv):
             life_course_id = item['']
 
@@ -425,10 +425,10 @@ def csv_index(es, path):
                 if (pa_id, source_year) not in pa_life_courses:
                     pa_life_courses[(pa_id, source_year)] = set()
                 pa_life_courses[(pa_id, source_year)].add(life_course_id)
-    print(f'loaded {len(life_courses)} life courses')
+    print(f' => -> Loaded {len(life_courses)} life courses')
 
     for csv in [f for f in csv_dir.iterdir() if f.suffix == '.csv' and f.stem.startswith('links')]:
-        print('loading link data from',csv)
+        print(' => Loading link data from',csv)
         i = 0
         for item in read_csv(csv):
             link_id = item['link_id']
@@ -452,17 +452,17 @@ def csv_index(es, path):
                 if (pa_id, source_year) not in pa_links:
                     pa_links[(pa_id, source_year)] = set()
                 pa_links[(pa_id, source_year)].add(link_id)
-    print(f'loaded {len(links)} links')
+    print(f' => -> Loaded {len(links)} links')
 
-    print(f'indexing empty life courses')
+    print(f' => Indexing empty life courses')
     csv_index_life_courses(es, life_courses.values())
 
-    print(f'indexing empty links')
+    print(f' => Indexing empty links')
     csv_index_links(es, links.values())
 
     #for csv in [f for f in csv_dir.iterdir() if f.suffix == '' and f.stem.startswith('census')]:
     for csv in [f for f in csv_dir.iterdir() if f.stem.startswith('census')]:
-        print('indexing census data from',csv)
+        print(' => Indexing census data from',csv)
         i = 0
         for item in read_csv(csv):
             # a lot of exceptions occured because 'age' was set to the string 'Under 1 Aar', which
@@ -511,38 +511,45 @@ if __name__ == "__main__":
     es = Elasticsearch(hosts=["localhost:80"])
     es.info()
     if args.cmd == 'setup':
-        print("deleting indices")
+        print("Deleting indices")
         try:
             es.indices.delete("links,lifecourses,pas")
         except:
-            pass
+            print('An error occured during index delete.')
+            sys.exit(1)
 
-        print("setting up indices")
-        print(" => creating links index")
+        print("Setting up indices")
+        print(" => Creating links index")
         es.indices.create('links')
-        print(" => putting links mapping")
+        print(" => Putting links mapping")
         es.indices.put_mapping(index='links', body=mappings_index_links())
 
-        print(" => creating lifecourses index")
+        print(" => Creating lifecourses index")
         es.indices.create('lifecourses')   
-        print(" => putting lifecourse mapping")
+        print(" => Putting lifecourse mapping")
         es.indices.put_mapping(index='lifecourses', body=mappings_index_lifecourses())         
 
-        print(" => creating pas index")
+        print(" => Creating pas index")
         es.indices.create('pas')
-        print(" => putting pas mapping")
+        print(" => Putting pas mapping")
         es.indices.put_mapping(index='pas', body=mappings_index_pas())
     elif args.cmd == 'index-sqlite':
         if not args.sqlite_db.is_file():
-            print(f"could not find sqlite db {args.sqlite_db}")
+            print(f"Error: Could not find sqlite db {args.sqlite_db}")
             sys.exit(1)
-        print(f'indexing {args.sqlite_db}')
+        print(f'Indexing sqlite db {args.sqlite_db}')
         index(str(args.sqlite_db), es)
     elif args.cmd == 'index':
         if not args.csv_dir.is_dir():
-            print(f'Path does not exist or is not a directory: {args.csv_dir}')
-        print(f'indexing csv files at {args.csv_dir}')
-        csv_index(es, str(args.csv_dir))
+            print(f'Error: Path does not exist or is not a directory: {args.csv_dir}')
+            sys.exit(1)
+        print(f'Indexing csv files at {args.csv_dir}')
+        try:
+            csv_index(es, str(args.csv_dir))
+        except RequestError as e:
+            print(f'Error: A request exception occured')
+            print(f' => Status code: {e.status_code}, error message: {e.error}')
+            print(repr(e.info))
     else:
-        print('argument error')
+        print('Error: Invalid command')
         sys.exit(1)
