@@ -1,5 +1,6 @@
 import sqlite3
 from elasticsearch import Elasticsearch
+from elasticsearch.helpers import bulk
 from elasticsearch.exceptions import NotFoundError as ESNotFoundError
 from math import ceil
 from pathlib import Path
@@ -314,25 +315,21 @@ def source_info(source_id):
     return sources[str(source_id)]
 
 
-def csv_index_life_course(es, life_course):
-    """Index a document in the 'life_courses' index.
+def csv_index_life_courses(es, life_courses):
+    """Bulk indexes documents in the 'life_courses' index.
     
-    This only creates the empty life course document without any person
+    This only creates the empty life course documents without any person
     appearances, which are added to this index by the `csv_index_pa` function.
 
     Args:
         es: An Elasticsearch client
-        life_course: The life course object
+        life_courses: An iterable of life course objects
     """
-    doc = {
-        'life_course_id': life_course[''],
-        'person_appearance': []
-    }
-
-    es.index(index="lifecourses", id=life_course[''], body=doc)
+    actions = [{'_op_type': 'index', '_index': 'lifecourses', '_id': lc[''], 'doc': { 'life_course_id': lc[''], 'person_appearance': [] } } for lc in life_courses]
+    bulk(es, actions)
 
 
-def csv_index_link(es, link):
+def csv_index_links(es, links):
     """Index a document in the 'links' index.
 
     This only creates the link document with link metadata, without any person
@@ -342,7 +339,8 @@ def csv_index_link(es, link):
         es: An Elasticsearch client
         link: The link object
     """
-    pass
+    actions = [{'_op_type': 'index', '_index': 'links', '_id': li['link_id'], 'doc': { 'link_id': li['link_id'], 'person_appearance': [] } } for li in links]
+    bulk(es, actions)
 
 
 def csv_index_pa(es, pa, links, life_courses):
@@ -358,23 +356,35 @@ def csv_index_pa(es, pa, links, life_courses):
         links: A list of link ids this person appearance belongs to
         life_courses: A list of life course ids this person appearance belongs to
     """
-    pa = {
-        'pa_id': pa['id'],
-        'gender': pa['gender'],
-        'age': pa['age'],
-        'age_clean': pa['age_clean'],
-        'name': pa['name'],
-        'name_std': pa['name_std']
+    doc = {
+        'person_appearance': {
+            'pa_id': pa['id'],
+            'gender': pa['gender'],
+            'age': pa['age'],
+            'age_clean': pa['age_clean'],
+            'name': pa['name'],
+            'name_std': pa['name_std']
+        }
     }
 
     # index pa into pas
-    es.index(index='pas', id=pa['id'], body={'person_appearance': pa})
+    es.index(index='pas', id=pa['id'], body=doc)
     
     # index pa into links
+    for link_id in links:
+        body = {
+            "script": {
+                "source": "ctx._source.person_appearance.add(params.pa)",
+                "lang": "painless",
+                "params": {
+                    "pa": pa
+                }
+            }
+        }
+        es.update(index="links", id=link_id, body=body)
 
     # index pa into life courses
     for life_course_id in life_courses:
-        print(life_course_id, pa['name'])
         body = {
             "script": {
                 "source": "ctx._source.person_appearance.add(params.pa)",
@@ -399,7 +409,6 @@ def csv_index(es, path):
     links = {}
     pa_life_courses = {}
     pa_links = {}
-
     for csv in [f for f in csv_dir.iterdir() if f.suffix == '.csv' and f.stem.startswith('life_courses')]:
         print('loading life course data from',csv)
         for item in read_csv(csv):
@@ -416,10 +425,11 @@ def csv_index(es, path):
                 if (pa_id, source_year) not in pa_life_courses:
                     pa_life_courses[(pa_id, source_year)] = set()
                 pa_life_courses[(pa_id, source_year)].add(life_course_id)
-
     print(f'loaded {len(life_courses)} life courses')
+
     for csv in [f for f in csv_dir.iterdir() if f.suffix == '.csv' and f.stem.startswith('links')]:
         print('loading link data from',csv)
+        i = 0
         for item in read_csv(csv):
             link_id = item['link_id']
 
@@ -442,23 +452,24 @@ def csv_index(es, path):
                 if (pa_id, source_year) not in pa_links:
                     pa_links[(pa_id, source_year)] = set()
                 pa_links[(pa_id, source_year)].add(link_id)
+    print(f'loaded {len(links)} links')
 
     print(f'indexing empty life courses')
-    for life_course in life_courses.values():
-        csv_index_life_course(es, life_course)
+    csv_index_life_courses(es, life_courses.values())
 
     print(f'indexing empty links')
-    for link in links.values():
-        csv_index_link(es, link)
+    csv_index_links(es, links.values())
 
-    print(f'loaded {len(links)} links')
     #for csv in [f for f in csv_dir.iterdir() if f.suffix == '' and f.stem.startswith('census')]:
-    for csv in [f for f in csv_dir.iterdir() if f.stem in ('census_1901', 'census_1885')]:
+    for csv in [f for f in csv_dir.iterdir() if f.stem.startswith('census')]:
         print('indexing census data from',csv)
+        i = 0
         for item in read_csv(csv):
             # a lot of exceptions occured because 'age' was set to the string 'Under 1 Aar', which
             # clashed with the Elasticsearch index mapping which typed 'age' float.
-            if item.get('age') == 'Under 1 Aar':
+            try:
+                int(item.get('age'))
+            except:
                 item['age'] = None
             
             # retrieve the life course ids that the person appearance belongs to
@@ -471,6 +482,10 @@ def csv_index(es, path):
                 link_ids = pa_links[(item['id'], item['source_year'])]
 
             csv_index_pa(es, item, link_ids, life_course_ids)
+
+            i += 1
+            if i == 1000:
+                break
 
 
 if __name__ == "__main__":
