@@ -12,6 +12,12 @@
             "host": {
                 "sourcePath": "/tmp/linklives-data"
             }
+        },
+        {
+            "name": "elasticsearch-data",
+            "host": {
+                "sourcePath": "/elasticsearch-data"
+            }
         }
     ],
     "containerDefinitions": [
@@ -38,14 +44,9 @@
               ],
               "mountPoints": [
                 {
-                    "sourceVolume": "indexer-code",
-                    "containerPath": "/indexer",
+                    "sourceVolume": "elasticsearch-data",
+                    "containerPath": "/usr/share/elasticsearch/data",
                     "readOnly": false
-                },
-                {
-                    "sourceVolume": "indexer-data",
-                    "containerPath": "/indexer-data",
-                    "readOnly": true
                 }
             ]
         },
