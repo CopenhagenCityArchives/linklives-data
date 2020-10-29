@@ -4,6 +4,7 @@ from elasticsearch.helpers import bulk
 from elasticsearch.exceptions import RequestError
 from math import ceil
 from pathlib import Path
+import csv
 
 
 CHUNK_SIZE = 10000
@@ -177,57 +178,22 @@ def index_life_course(life_course_id, pas):
 
 
 def mapping_pa_properties():
-    """Returns the Elasticsearch mappings for person appearance objects."""
+    """
+    Returns the Elasticsearch mappings for person appearance objects."""
     return {
-        "pa_id": {"type": "integer"},
-        "source_id": {"type": "integer"},
-
-        "løbenr_i_indtastning": {"type": "float"}, 
-        "Stednavn": {"type": "text"}, 
-        "name": {"type": "text"}, 
-        "age": {"type": "float"}, 
-        "Erhverv": {"type": "text"}, 
-        "Stilling_i_husstanden": {"type": "text"}, 
-        "birth_place": {"type": "text"}, 
-        "gender": {"type": "text"}, 
-        "Sogn": {"type": "text"}, 
-        "Amt": {"type": "text"}, 
-        "Herred": {"type": "text"}, 
-        "gender_clean": {"type": "text"}, 
-        "name_clean": {"type": "keyword"}, 
-        "age_clean": {"type": "float"}, 
-        "hh_id": {"type": "integer"}, 
-        "hh_pos_std": {"type": "text"}, 
-        "is_husband": {"type": "integer"}, 
-        "has_husband": {"type": "integer"}, 
-        "name_std": {"type": "text"}, 
-        "maiden_family_names": {"type": "text"}, 
-        "maiden_patronyms": {"type": "text"}, 
-        "first_names": {"type": "text"}, 
-        "patronyms": {"type": "text"}, 
-        "family_names": {"type": "text"}, 
-        "uncat_names": {"type": "text"}, 
-        "husband_first_names": {"type": "text"}, 
-        "husband_name_match": {"type": "integer"}, 
-        "true_patronym": {"type": "text"}, 
-        "all_possible_patronyms": {"type": "text"}, 
-        "all_possible_family_names": {"type": "text"}, 
-        "b_place_cl": {"type": "keyword"}, 
-        "other_cl": {"type": "keyword"}, 
-        "parish_cl": {"type": "keyword"}, 
-        "district_cl": {"type": "keyword"}, 
-        "county_cl": {"type": "keyword"}, 
-        "koebstad_cl": {"type": "keyword"}, 
-        "island_cl": {"type": "keyword"}, 
-        "town_cl": {"type": "keyword"}, 
-        "place_cl": {"type": "keyword"}, 
-        "county_std": {"type": "keyword"}, 
-        "parish_std": {"type": "keyword"}
+        'pa_id': {"type": "integer"},
+        'gender': {"type": "text"},
+        'age': {"type": "text"},
+        'age_clean': {"type": "text"},
+        'name': {"type": "text"},
+        'name_std': {"type": "text"}
     }
 
 def mappings_index_lifecourses():
-    """Returns the Elasticsearch mappings for the 'lifecourses' index
-    containing the life courses."""
+    """
+    Returns the Elasticsearch mappings for the 'lifecourses' index
+    containing the life courses.
+    """
     return {
         "dynamic": False,
         "properties": {
@@ -240,7 +206,8 @@ def mappings_index_lifecourses():
     }
 
 def mappings_index_links():
-    """Returns the Elasticsearch mappings for the 'links' index containing the
+    """
+    Returns the Elasticsearch mappings for the 'links' index containing the
     links between person appearances in different sources."""
     return {
         "dynamic": False,
@@ -257,7 +224,8 @@ def mappings_index_links():
     }
 
 def mappings_index_pas():
-    """Returns the Elasticsearch mappings for the 'pas' index containing person
+    """
+    Returns the Elasticsearch mappings for the 'pas' index containing person
     appearances.
     """
 
@@ -272,8 +240,9 @@ def mappings_index_pas():
     }
 
 
-def read_csv(path, delimiter='$'):
-    """Read a simple comma-separated file with arbitrary separators.
+def read_csv(path, delimiter='$', quote='"'):
+    """
+    Read a simple comma-separated file with arbitrary separators.
 
     Does *NOT* support multiline or quoted values.
 
@@ -289,8 +258,223 @@ def read_csv(path, delimiter='$'):
             yield { header: None if value == '' else value for (header, value) in zip(headers, line.strip().split(delimiter)) }
 
 
+class PersonAppearance:
+    """
+    An object representing a person appearance.
+
+    Used for parsing and validating person appearances in a single place.
+    """
+
+    def __init__(self, pa_id, source_id):
+        """
+        Initialize a person appearance with just the id properties defined.
+        """
+        self.id = f'{source_id}-{pa_id}'
+        self.pa_id = pa_id
+        self.source_id = source_id
+
+        self.gender = None # original	string	census	Gender as transcribed
+        self.gender_clean = None # processed	string	census	Gender after removing unwanted characters
+        self.gender_std = None # processed	string (m or k)	census	Standardized gender. A result of predicting the gender based on the name (also for records not originally coming with a gender)
+        self.age = None # original	string	census	Age as transcribed
+        self.age_clean = None # processed	float	census	age after cleaning and converting to floats
+        self.name = None # original	string	census	Name as transcribed
+        self.name_clean = None # processed	string	census	lowercase Name after removing unwanted characters
+        self.name_std = None # processed	string	census	standardized full name
+        self.first_names = None # processed	list of strings (comma "," separated)	census	standardized names classified as first names
+        self.family_names = None # processed	list of strings (comma "," separated)	census	standardized names classified as family names
+        self.patronyms = None # processed	list of strings (comma "," separated)	census	standardized names classified as patronyms
+        self.uncat_names = None # processed	list of strings (comma "," separated)	census	unclassified standardized names
+        self.maiden_family_names = None # processed	list of strings (comma "," separated)	census	standardized names classified as maiden family names
+        self.maiden_patronyms = None # processed	list of strings (comma "," separated)	census	standardized names classified as maiden patronyms
+        self.all_possible_family_names = None # processed	list of strings (comma "," separated)	census	all possible  family names (standardized names). Includes constructed names based on husband/father names
+        self.all_possible_patronyms = None # processed	list of strings (comma "," separated)	census	all possible  patronyms (standardized names). Includes constructed names based on husband/father names
+        self.marital_status = None # original	string	census	marital status as transcribed
+        self.marital_status_clean = None # processed	string	census	marital status after removing unwanted characters
+        self.marital_status_std = None # processed	string	census	standardized marital status
+        self.household_position = None # original	string	census	household position as transcribed
+        self.household_position_std = None # processed	string	census	standiardized household position
+        self.household_family_no = None # original	string	census	household family number as transcribed. Should uniquely label the households. It is far from doing so.
+        self.hh_id = None # processed	integer	census	household id. Improved household identification. Uses multiple variables get a better separation of households.
+        self.occupation = None # original	string	census	occupation as transcribed. Note: for some censuses the household positions are put here.
+        self.place_name = None # original	string	census	place_name as transcribed.
+        self.land_register_address = None # original	string	census	land_register_address  as transcribed.
+        self.land_register = None # original	string	census	land_register  as transcribed.
+        self.address = None # original	string	census	address  as transcribed. Note: this rarely contains a full addresss
+        self.full_address = None # processed	string	census	a concatenation of: place_name, land_register_address, land_register, and address
+        self.parish = None # original	string	census	parish or street where the source was originally created
+        self.parish_type = None # original	string	census	the type of parish, i.e. parish, street etc.
+        self.district = None # original	string	census	district where the source was originally created
+        self.county = None # original	string	census	county where the source was originally created
+        self.state_region = None # original	string	census	state_region (danmark, grønland, færøerne, etc.) where the source was originally created
+        self.transcription_code = None # original	string	census	unique batch code of the transcription unit
+        self.transcription_id = None # original	integer	census	unique record number within the transcription unit
+        self.birth_place = None # original	string	census	birth place as transcribed (note: only available from 1845 and forth)
+        self.birth_place_clean = None # processed	string	census	birth_place after removing unwanted characters
+        self.birth_place_parish = None # processed	string	census	birth place classified as a parish
+        self.birth_place_district = None # processed	string	census	birth place classified as a district
+        self.birth_place_county = None # processed	string	census	birth place classified as a county
+        self.birth_place_koebstad = None # processed	string	census	birth place classified as a koebstad
+        self.birth_place_town = None # processed	string	census	birth place classified as a town
+        self.birth_place_place = None # processed	string	census	birth place classified as a place
+        self.birth_place_island = None # processed	string	census	birth place classified as a island
+        self.birth_place_other = None # processed	string	census	birth place classified as a other (e.g. a country)
+        self.birth_place_parish_std = None # processed	string	census	standardized birth place parish
+        self.birth_place_county_std = None # processed	string	census	standardized birth place county
+        self.birth_place_koebstad_std = None # processed	string	census	standardized birth place koebstad
+        self.source_reference = None # original	string	census	A reference to the original source
+        self.transcriber_comments = None # original	string	census	comments by the transcriber
+        self.source_year = None # processed	integer	census	year of the event
+        self.event_type = None # processed	string	census	type of event (e.g. census, burial, baptism, etc.)
+        self.role = None # processed	string	census	the role of the record in the source (e.g. mother, father, child, deceased, bride, etc.)
+
+
+    def es_document(self):
+        """
+        Get a dictionary that is an Elasticsearch document.
+
+        Returns:
+           A dictionary containing the data of this person appearance in the
+           format of an Elasticsearch document. 
+        """
+        return {
+            'id': self.id,
+            'pa_id': self.pa_id,
+            'source_id': self.source_id,
+            'transcription_id': self.transcription_id,
+            'gender': self.gender,
+            'gender_clean': self.gender_clean,
+            'gender_std': self.gender_std,
+            'age': self.age,
+            'age_clean': self.age_clean,
+            'name': self.name,
+            'name_clean': self.name_clean,
+            'name_std': self.name_std,
+            'first_names': self.first_names,
+            'patronyms': self.patronyms,
+            'family_names': self.family_names,
+            'uncat_names': self.uncat_names,
+            'maiden_family_names': self.maiden_family_names,
+            'maiden_patronyms': self.maiden_patronyms,
+            'all_possible_patronyms': self.all_possible_patronyms,
+            'all_possible_family_names': self.all_possible_family_names,
+            'marital_status': self.marital_status,
+            'marital_status_clean': self.marital_status_clean,
+            'marital_status_std': self.marital_status_std,
+            'household_position': self.household_position,
+            'household_position_std': self.household_position_std,
+            'household_family_no': self.household_family_no,
+            'hh_id': self.hh_id,
+            'occupation': self.occupation,
+            'place_name': self.place_name,
+            'land_register_address': self.land_register_address,
+            'parish': self.parish,
+            'parish_type': self.parish_type,
+            'state_region': self.state_region,
+            'county': self.county,
+            'district': self.district,
+            'transcription_code': self.transcription_code,
+            'source_reference': self.source_reference,
+            'transcriber_comments': self.transcriber_comments,
+            'address': self.address,
+            'land_register': self.land_register,
+            'source_year': self.source_year,
+            'event_type': self.event_type,
+            'role': self.role,
+            'full_address': self.full_address,
+            'birth_place': self.birth_place,
+            'birth_place_clean': self.birth_place_clean,
+            'birth_place_other': self.birth_place_other,
+            'birth_place_parish': self.birth_place_parish,
+            'birth_place_district': self.birth_place_district,
+            'birth_place_county': self.birth_place_county,
+            'birth_place_koebstad': self.birth_place_koebstad,
+            'birth_place_island': self.birth_place_island,
+            'birth_place_town': self.birth_place_town,
+            'birth_place_place': self.birth_place_place,
+            'birth_place_county_std': self.birth_place_county_std,
+            'birth_place_parish_std': self.birth_place_parish_std,
+            'birth_place_koebstad_std': self.birth_place_koebstad_std
+        }
+
+    @staticmethod
+    def from_dict(data, raise_invalid=False):
+        """
+        Instantiate a PersonAppearance object from a given dictionary.
+
+        Args:
+            pa_id: The person appearance id, unique within a source
+            source_id: The source id of the source in which the person
+                       appearance occurs
+            data: A dictionary containing data about the person appearance.
+            raise_invalid: If true, exceptions are raised when invalid
+                           properties exist in ``data``. If false these
+                           properties are simply skipped.
+        
+        Returns:
+            A PersonAppearance instance.
+        """
+        pa = PersonAppearance(data['id'], data['source_year'])
+
+        del data['id']
+
+        for prop in data:
+            try:
+                getattr(pa, prop) # triggers an exception when property does not exist
+                setattr(pa, prop, data[prop])
+            except AttributeError:
+                if raise_invalid:
+                    raise
+        
+        return pa 
+
+
+class Link:
+    """
+    A link between two person appearances.
+    """
+
+    def __init__(self, link_id, pa_id_1, source_id_1, pa_id_2, source_id_2):
+        self.link_id = link_id
+        self.pa_id_1 = pa_id_1
+        self.pa_id_2 = pa_id_2
+        self.source_id_1 = source_id_1
+        self.source_id_2 = source_id_2
+    
+    @staticmethod
+    def from_dict(data):
+        return Link(data['link_id'], data['pa_id1'], data['pa_id2'], data['source_id1'], data['source_id2'])
+
+
+class LifeCourse:
+    """
+    A life course.
+    """
+    
+    def __init__(self, life_course_id):
+        """
+        Initialize an empty life course.
+
+        Args:
+            life_course_id: The unique identifier of the life course
+        """
+        self.life_course_id = life_course_id
+        self.person_appearances = []
+        self.occurences = 0
+    
+    @staticmethod
+    def from_dict(data, config):
+        lc = LifeCourse(data[''])
+        for key in data:
+            if key in ('', 'occurences'):
+                continue
+
+        return lc
+
+    
 def source_info(source_id):
-    """Get the source information from the id.
+    """
+    Get the source information from the id.
 
     Args:
         source_id: The unique identifier of the source.
@@ -300,23 +484,24 @@ def source_info(source_id):
         and 'type' of the source.
     """
     sources = {
-        '0': { 'year': 1787, 'type': 'census' },
-        '1': { 'year': 1801, 'type': 'census' },
-        '2': { 'year': 1834, 'type': 'census' },
-        '3': { 'year': 1840, 'type': 'census' },
-        '4': { 'year': 1845, 'type': 'census' },
-        '5': { 'year': 1850, 'type': 'census' },
-        '6': { 'year': 1860, 'type': 'census' },
-        '7': { 'year': 1880, 'type': 'census' },
-        '8': { 'year': 1885, 'type': 'census' },
-        '9': { 'year': 1901, 'type': 'census' }
+        '0': { 'year': '1787', 'type': 'census' },
+        '1': { 'year': '1801', 'type': 'census' },
+        '2': { 'year': '1834', 'type': 'census' },
+        '3': { 'year': '1840', 'type': 'census' },
+        '4': { 'year': '1845', 'type': 'census' },
+        '5': { 'year': '1850', 'type': 'census' },
+        '6': { 'year': '1860', 'type': 'census' },
+        '7': { 'year': '1880', 'type': 'census' },
+        '8': { 'year': '1885', 'type': 'census' },
+        '9': { 'year': '1901', 'type': 'census' }
     }
     
     return sources[str(source_id)]
 
 
-def csv_index_life_courses(es, life_courses):
-    """Bulk indexes documents in the 'life_courses' index.
+def csv_index_life_courses(es, life_courses, bulk_helper=bulk):
+    """
+    Bulk indexes documents in the 'life_courses' index.
     
     This only creates the empty life course documents without any person
     appearances, which are added to this index by the `csv_index_pa` function.
@@ -324,81 +509,133 @@ def csv_index_life_courses(es, life_courses):
     Args:
         es: An Elasticsearch client
         life_courses: An iterable of life course objects
+        bulk_helper: Helper function for Elasticsearch _bulk endpoint
     """
-    actions = [{'_op_type': 'index', '_index': 'lifecourses', '_id': lc[''], 'doc': { 'life_course_id': lc[''], 'person_appearance': [] } } for lc in life_courses]
-    bulk(es, actions)
+    actions = [{'_op_type': 'index', '_index': 'lifecourses', '_id': lc[''], 'life_course_id': lc[''], 'person_appearance': [] } for lc in life_courses]
+    bulk_helper(es, actions)
 
 
-def csv_index_links(es, links):
-    """Index a document in the 'links' index.
+def csv_index_links(es, links, bulk_helper=bulk):
+    """
+    Bulk indexes documents in the 'links' index.
 
-    This only creates the link document with link metadata, without any person
-    appearances, which are added to this index by the `csv_index_pa` function.
+    This only creates the link documents with link metadata, without any person
+    appearances, which are added to this index by the `csv_index_pas` function.
     
     Args:
         es: An Elasticsearch client
         link: The link object
+        bulk_helper: Helper function for Elasticsearch _bulk endpoint
     """
-    actions = [{'_op_type': 'index', '_index': 'links', '_id': li['link_id'], 'doc': { 'link_id': li['link_id'], 'person_appearance': [] } } for li in links]
-    bulk(es, actions)
+    actions = [{'_op_type': 'index', '_index': 'links', '_id': li['link_id'], 'link_id': li['link_id'], 'link': li, 'person_appearance': [] } for li in links]
+    bulk_helper(es, actions)
 
 
-def csv_index_pa(es, pa, links, life_courses):
-    """Index a person appearance.
-        
-    Indexes a document in the 'pas' index, and potentially adds the person
-    appearance to the 'life_course' index documents that the person appearance
-    belongs to.
+def csv_pa_bulk_actions(pa, life_courses, links):
+    """
+    Generates the bulk actions for indexing a given person appearance, and
+    adding this person appearance to the relevant links and life courses.
 
     Args:
-        es: An Elasticsearch client
-        pa: The person appearance object
-        links: A list of link ids this person appearance belongs to
-        life_courses: A list of life course ids this person appearance belongs to
+        pa: A PersonAppearance object
+        life_courses: A list of life course ids
+        links: A list of link ids
+    
+    Returns:
+        A generator of Elasticsearch bulk actions
     """
-    doc = {
-        'person_appearance': {
-            'pa_id': pa['id'],
-            'gender': pa['gender'],
-            'age': pa['age'],
-            'age_clean': pa['age_clean'],
-            'name': pa['name'],
-            'name_std': pa['name_std']
-        }
+    yield {
+        '_op_type': 'index',
+        '_index': 'pas',
+        '_id': pa.id,
+        "person_appearance": pa.es_document()
     }
 
-    # index pa into pas
-    es.index(index='pas', id=pa['id'], body=doc)
+    for link in links:
+        yield {
+            '_op_type': 'update',
+            '_index': 'links',
+            '_id': link,
+            'script': {
+                "source": "ctx._source.person_appearance.add(params.pa)",
+                "params": {
+                    "pa": pa.es_document()
+                }
+            }
+        }
     
-    # index pa into links
-    for link_id in links:
-        body = {
-            "script": {
+    for life_course in life_courses:
+        yield {
+            '_op_type': 'update',
+            '_index': 'lifecourses',
+            '_id': life_course,
+            'script': {
                 "source": "ctx._source.person_appearance.add(params.pa)",
                 "lang": "painless",
                 "params": {
-                    "pa": pa
+                    "pa": pa.es_document()
                 }
             }
         }
-        es.update(index="links", id=link_id, body=body)
 
-    # index pa into life courses
-    for life_course_id in life_courses:
-        body = {
-            "script": {
-                "source": "ctx._source.person_appearance.add(params.pa)",
-                "lang": "painless",
-                "params": {
-                    "pa": pa
-                }
-            }
-        }
-        es.update(index="lifecourses", id=life_course_id, body=body)
+
+def csv_pas_bulk_actions(pas):
+    """
+    Generates bulk actions for the given iterator of PersonAppearance, life
+    course ids, and link ids tuples.
+
+    Args:
+        pas: A list of tuples containing PersonAppearance objects, lists of life
+            course ids and lists of link ids.
+        
+    Returns:
+        A generator of Elasticsearch bulk actions.
+    """
+    for (pa, life_courses, links) in pas:
+        for action in csv_pa_bulk_actions(pa, life_courses, links):
+            yield action
+
+
+def csv_read_pas(csv_files, pa_life_courses, pa_links):
+    """
+    Reads CSV files containing person appearance data, and generates tuples of
+    PersonAppearance objects, lists of life course ids, and lists of link ids.
+
+    Args:
+        csv_files: An iterator of pathlib.Path-like objects that can be opened.
+        pa_life_courses: A dictionary mapping pa_id to [life_course_id]
+        pa_links: A dictionary mapping pa_id to [link_id]
+
+    Returns:
+        A generator, generating tuples of PersonAppearance objects, lists of
+        life course ids, and lists of link ids
+    """
+    for csv_path in csv_files:
+        print(f' => -> Indexing census data from {csv_path}')
+        line = 2
+        with csv_path.open('r', encoding='utf-8') as csvfile:
+            for item in csv.DictReader(csvfile, delimiter='$', quotechar='"'):
+                try:
+                    pa = PersonAppearance.from_dict(item)
+                except Exception as e:
+                    print(f"{repr(e)} line={line} file={csv_path}")
+                line += 1
+                
+                # retrieve the life course ids that the person appearance belongs to
+                life_course_ids = []
+                if (pa.pa_id, pa.source_id) in pa_life_courses:
+                    life_course_ids = pa_life_courses[(pa.pa_id, pa.source_id)]
+                
+                link_ids = []
+                if (pa.pa_id, pa.source_id) in pa_links:
+                    link_ids = pa_links[(pa.pa_id, pa.source_id)]
+
+                yield (pa, life_course_ids, link_ids)
 
 
 def csv_index(es, path):
-    """Perform the indexing of a directory of link lives data.
+    """
+    Perform the indexing of a directory of link lives data.
 
     Args:
         es: An Elasticsearch client
@@ -409,49 +646,50 @@ def csv_index(es, path):
     links = {}
     pa_life_courses = {}
     pa_links = {}
-    for csv in [f for f in csv_dir.iterdir() if f.suffix == '.csv' and f.stem.startswith('life_courses')]:
-        print(' => Loading life course data from',csv)
-        for item in read_csv(csv):
-            life_course_id = item['']
+    for csv_path in [f for f in csv_dir.iterdir() if f.suffix == '.csv' and f.stem.startswith('life_courses')]:
+        print(f' => Loading life course data from {csv_path}')
+        with csv_path.open('r', encoding='utf-8') as csvfile:
+            for item in csv.DictReader(csvfile, delimiter='$', quotechar='"'):
+                life_course_id = item['']
 
-            # add the life course to the life courses dict
-            life_courses[life_course_id] = item
+                # add the life course to the life courses dict
+                life_courses[life_course_id] = item
 
-            # extract the columns of the life course csv that are pa_ids
-            pa_ids_src = [(key, val) for (key, val) in item.items() if val is not None and key not in ('', 'occurences')]
+                # extract the columns of the life course csv that are pa_ids
+                pa_ids_src = [(key, val) for (key, val) in item.items() if val is not None and key not in ('', 'occurences')]
 
-            # add each pa_id-source_year combination to the pa_life_course dict
-            for (source_year, pa_id) in pa_ids_src:
-                if (pa_id, source_year) not in pa_life_courses:
-                    pa_life_courses[(pa_id, source_year)] = set()
-                pa_life_courses[(pa_id, source_year)].add(life_course_id)
+                # add each pa_id-source_year combination to the pa_life_course dict
+                for (source_year, pa_id) in pa_ids_src:
+                    if (pa_id, source_year) not in pa_life_courses:
+                        pa_life_courses[(pa_id, source_year)] = set()
+                    pa_life_courses[(pa_id, source_year)].add(life_course_id)
     print(f' => -> Loaded {len(life_courses)} life courses')
 
-    for csv in [f for f in csv_dir.iterdir() if f.suffix == '.csv' and f.stem.startswith('links')]:
-        print(' => Loading link data from',csv)
-        i = 0
-        for item in read_csv(csv):
-            link_id = item['link_id']
+    for csv_path in [f for f in csv_dir.iterdir() if f.suffix == '.csv' and f.stem.startswith('links')]:
+        print(f' => Loading link data from {csv_path}')
+        with csv_path.open() as csvfile:
+            for item in csv.DictReader(csvfile, delimiter='$', quotechar='"'):
+                link_id = item['link_id']
 
-            # add the link to the link dict
-            links[link_id] = item
+                # add the link to the link dict
+                links[link_id] = item
 
-            # add the pa_ids to the pa_links dictionary
-            # get info for the first pa in the link
-            pa_id_1 = item['pa_id1']
-            source_id_1 = item['source_id1']
-            source_1 = source_info(source_id_1)
+                # add the pa_ids to the pa_links dictionary
+                # get info for the first pa in the link
+                pa_id_1 = item['pa_id1']
+                source_id_1 = item['source_id1']
+                source_1 = source_info(source_id_1)
 
-            # get info for the secoond pa in the link
-            pa_id_2 = item['pa_id2']
-            source_id_2 = item['source_id2']
-            source_2 = source_info(source_id_2)
+                # get info for the secoond pa in the link
+                pa_id_2 = item['pa_id2']
+                source_id_2 = item['source_id2']
+                source_2 = source_info(source_id_2)
 
-            # add each info to the pa_links dictioanry
-            for pa_id, source_year in [(pa_id_1, source_1['year']), (pa_id_2, source_2['year'])]:
-                if (pa_id, source_year) not in pa_links:
-                    pa_links[(pa_id, source_year)] = set()
-                pa_links[(pa_id, source_year)].add(link_id)
+                # add each info to the pa_links dictioanry
+                for pa_id, source_year in [(pa_id_1, source_1['year']), (pa_id_2, source_2['year'])]:
+                    if (pa_id, source_year) not in pa_links:
+                        pa_links[(pa_id, source_year)] = set()
+                    pa_links[(pa_id, source_year)].add(link_id)
     print(f' => -> Loaded {len(links)} links')
 
     print(f' => Indexing empty life courses')
@@ -460,32 +698,9 @@ def csv_index(es, path):
     print(f' => Indexing empty links')
     csv_index_links(es, links.values())
 
-    #for csv in [f for f in csv_dir.iterdir() if f.suffix == '' and f.stem.startswith('census')]:
-    for csv in [f for f in csv_dir.iterdir() if f.stem.startswith('census')]:
-        print(' => Indexing census data from',csv)
-        i = 0
-        for item in read_csv(csv):
-            # a lot of exceptions occured because 'age' was set to the string 'Under 1 Aar', which
-            # clashed with the Elasticsearch index mapping which typed 'age' float.
-            try:
-                int(item.get('age'))
-            except:
-                item['age'] = None
-            
-            # retrieve the life course ids that the person appearance belongs to
-            life_course_ids = []
-            if (item['id'], item['source_year']) in pa_life_courses:
-                life_course_ids = pa_life_courses[(item['id'], item['source_year'])]
-            
-            link_ids = []
-            if (item['id'], item['source_year']) in pa_links:
-                link_ids = pa_links[(item['id'], item['source_year'])]
-
-            csv_index_pa(es, item, link_ids, life_course_ids)
-
-            i += 1
-            if i == 1000:
-                break
+    print(f' => Indexing source data')
+    pas = csv_read_pas([f for f in csv_dir.iterdir() if f.stem.startswith('census')], pa_life_courses, pa_links)
+    bulk(es, csv_pas_bulk_actions(pas))
 
 
 if __name__ == "__main__":
@@ -508,15 +723,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     #es = Elasticsearch(hosts=["52.215.59.213:1234", "52.215.59.213:9300"])
-    es = Elasticsearch(hosts=["localhost:80"])
+    es = Elasticsearch(hosts=["https://data.link-lives.dk"])
     es.info()
     if args.cmd == 'setup':
         print("Deleting indices")
         try:
             es.indices.delete("links,lifecourses,pas")
         except:
-            print('An error occured during index delete.')
-            sys.exit(1)
+            pass
 
         print("Setting up indices")
         print(" => Creating links index")
