@@ -182,6 +182,10 @@ def mapping_pa_properties():
     Returns the Elasticsearch mappings for person appearance objects.
     """
     return {
+        'id': {'type': 'keyword'},
+        'pa_id': {'type': 'integer'},
+        'source_id': {'type': 'integer'},
+
         'gender': {'type': 'text' }, # Gender as transcribed
         'gender_clean': {'type': 'text' }, # Gender after removing unwanted characters
         'gender_std': {'type': 'keyword' }, # Standardized gender. A result of predicting the gender based on the name (also for records not originally coming with a gender)
@@ -388,14 +392,14 @@ class PersonAppearance:
         """
         return {
             'id': self.id,
-            'pa_id': self.pa_id,
-            'source_id': self.source_id,
-            'transcription_id': self.transcription_id,
+            'pa_id': int(self.pa_id),
+            'source_id': int(self.source_id),
+            'transcription_id': int(self.transcription_id) if self.transcription_id is not None else None,
             'gender': self.gender,
             'gender_clean': self.gender_clean,
             'gender_std': self.gender_std,
             'age': self.age,
-            'age_clean': self.age_clean,
+            'age_clean': float(self.age_clean) if self.age_clean is not None else None,
             'name': self.name,
             'name_clean': self.name_clean,
             'name_std': self.name_std,
@@ -413,7 +417,7 @@ class PersonAppearance:
             'household_position': self.household_position,
             'household_position_std': self.household_position_std,
             'household_family_no': self.household_family_no,
-            'hh_id': self.hh_id,
+            'hh_id': int(self.hh_id) if self.hh_id is not None else None,
             'occupation': self.occupation,
             'place_name': self.place_name,
             'land_register_address': self.land_register_address,
@@ -427,7 +431,7 @@ class PersonAppearance:
             'transcriber_comments': self.transcriber_comments,
             'address': self.address,
             'land_register': self.land_register,
-            'source_year': self.source_year,
+            'source_year': int(self.source_year) if self.source_year is not None else None,
             'event_type': self.event_type,
             'role': self.role,
             'full_address': self.full_address,
