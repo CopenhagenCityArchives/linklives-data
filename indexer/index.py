@@ -179,14 +179,63 @@ def index_life_course(life_course_id, pas):
 
 def mapping_pa_properties():
     """
-    Returns the Elasticsearch mappings for person appearance objects."""
+    Returns the Elasticsearch mappings for person appearance objects.
+    """
     return {
-        'pa_id': {"type": "integer"},
-        'gender': {"type": "text"},
-        'age': {"type": "text"},
-        'age_clean': {"type": "text"},
-        'name': {"type": "text"},
-        'name_std': {"type": "text"}
+        'gender': {'type': 'text' }, # Gender as transcribed
+        'gender_clean': {'type': 'text' }, # Gender after removing unwanted characters
+        'gender_std': {'type': 'keyword' }, # Standardized gender. A result of predicting the gender based on the name (also for records not originally coming with a gender)
+        'age': {'type': 'string' }, # Age as transcribed
+        'age_clean': {'type': 'float' }, # age after cleaning and converting to floats
+        'name': {'type': 'text' }, # Name as transcribed
+        'name_clean': {'type': 'text' }, # lowercase Name after removing unwanted characters
+        'name_std': {'type': 'text' }, # standardized full name
+        'first_names': {'type': 'text' }, # standardized names classified as first names
+        'family_names': {'type': 'text' }, # standardized names classified as family names
+        'patronyms': {'type': 'text' }, # standardized names classified as patronyms
+        'uncat_names': {'type': 'text' }, # unclassified standardized names
+        'maiden_family_names': {'type': 'text' }, # standardized names classified as maiden family names
+        'maiden_patronyms': {'type': 'text' }, # standardized names classified as maiden patronyms
+        'all_possible_family_names': {'type': 'text' }, # all possible  family names (standardized names). Includes constructed names based on husband/father names
+        'all_possible_patronyms': {'type': 'text' }, # all possible  patronyms (standardized names). Includes constructed names based on husband/father names
+        'marital_status': {'type': 'text' }, # marital status as transcribed
+        'marital_status_clean': {'type': 'text' }, # marital status after removing unwanted characters
+        'marital_status_std': {'type': 'keyword' }, # standardized marital status
+        'household_position': {'type': 'text' }, # household position as transcribed
+        'household_position_std': {'type': 'keyword' }, # standiardized household position
+        'household_family_no': {'type': 'text' }, # household family number as transcribed. Should uniquely label the households. It is far from doing so.
+        'hh_id': {'type': 'integer' }, # household id. Improved household identification. Uses multiple variables get a better separation of households.
+        'occupation': {'type': 'text' }, # occupation as transcribed. Note: for some censuses the household positions are put here.
+        'place_name': {'type': 'text' }, # place_name as transcribed.
+        'land_register_address': {'type': 'text' }, # land_register_address  as transcribed.
+        'land_register': {'type': 'text' }, # land_register  as transcribed.
+        'address': {'type': 'text' }, # address  as transcribed. Note: this rarely contains a full addresss
+        'full_address': {'type': 'text' }, # a concatenation of: place_name, land_register_address, land_register, and address
+        'parish': {'type': 'text' }, # parish or street where the source was originally created
+        'parish_type': {'type': 'keyword' }, # the type of parish, i.e. parish, street etc.
+        'district': {'type': 'text' }, # district where the source was originally created
+        'county': {'type': 'text' }, # county where the source was originally created
+        'state_region': {'type': 'text' }, # state_region (danmark, grønland, færøerne, etc.) where the source was originally created
+        'transcription_code': {'type': 'text' }, # unique batch code of the transcription unit
+        'transcription_id': {'type': 'integer' }, # unique record number within the transcription unit
+        'birth_place': {'type': 'text' }, # birth place as transcribed (note: only available from 1845 and forth)
+        'birth_place_clean': {'type': 'text' }, # birth_place after removing unwanted characters
+        'birth_place_parish': {'type': 'text' }, # birth place classified as a parish
+        'birth_place_district': {'type': 'text' }, # birth place classified as a district
+        'birth_place_county': {'type': 'text' }, # birth place classified as a county
+        'birth_place_koebstad': {'type': 'text' }, # birth place classified as a koebstad
+        'birth_place_town': {'type': 'text' }, # birth place classified as a town
+        'birth_place_place': {'type': 'text' }, # birth place classified as a place
+        'birth_place_island': {'type': 'text' }, # birth place classified as a island
+        'birth_place_other': {'type': 'text' }, # birth place classified as a other (e.g. a country)
+        'birth_place_parish_std': {'type': 'text' }, # standardized birth place parish
+        'birth_place_county_std': {'type': 'text' }, # standardized birth place county
+        'birth_place_koebstad_std': {'type': 'text' }, # standardized birth place koebstad
+        'source_reference': {'type': 'text' }, # A reference to the original source
+        'transcriber_comments': {'type': 'text' }, # comments by the transcriber
+        'source_year': {'type': 'integer' }, # year of the event
+        'event_type': {'type': 'text' }, # type of event (e.g. census, burial, baptism, etc.)
+        'role': {'type': 'text' }, # the role of the record in the source (e.g. mother, father, child, deceased, bride, etc.)
     }
 
 def mappings_index_lifecourses():
