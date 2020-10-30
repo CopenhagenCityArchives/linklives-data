@@ -474,7 +474,10 @@ class PersonAppearance:
         for prop in data:
             try:
                 getattr(pa, prop) # triggers an exception when property does not exist
-                setattr(pa, prop, data[prop])
+                if data[prop] == '':
+                    setattr(pa, prop, None)
+                else:
+                    setattr(pa, prop, data[prop])
             except AttributeError:
                 if raise_invalid:
                     raise
@@ -667,7 +670,7 @@ def csv_read_pas(csv_files, pa_life_courses, pa_links):
         print(f' => -> Indexing census data from {csv_path}')
         line = 2
         with csv_path.open('r', encoding='utf-8') as csvfile:
-            for item in csv.DictReader(csvfile, delimiter='$', quotechar='"'):
+            for item in csv.DictReader(csvfile, delimiter='$', quotechar='"', ):
                 try:
                     pa = PersonAppearance.from_dict(item)
                 except Exception as e:

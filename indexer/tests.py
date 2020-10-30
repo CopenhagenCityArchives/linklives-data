@@ -359,6 +359,14 @@ class TestCsvFileHelpers(unittest.TestCase):
 
         with self.assertRaises(StopIteration):
             next(iterator)
+
+    def test_csv_read_pas_empty_values_none(self):
+        csv1 = MagicMock()
+        csv1.open = unittest.mock.mock_open(read_data="id$source_year$birth_place$name\n123$1845$landsbylille$")
+
+        (pa, _, _) = next(csv_read_pas([csv1], {}, {}))
+
+        self.assertIsNone(pa.name)
     
     def test_csv_read_pas_multi_csv(self):
         csv1 = MagicMock()
