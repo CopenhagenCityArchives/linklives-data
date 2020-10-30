@@ -150,12 +150,12 @@ class TestPersonAppearance(unittest.TestCase):
     
     def test_from_dict_es_document_relation(self):
         d = {
-            'id': 12345,
+            'id': '12345',
             'gender': 'a',
             'gender_clean': 'b',
             'gender_std': 'c',
             'age': 'd',
-            'age_clean': 1.0,
+            'age_clean': '1.0',
             'name': 'd',
             'name_clean': 'e',
             'name_std': 'f',
@@ -173,7 +173,7 @@ class TestPersonAppearance(unittest.TestCase):
             'household_position': 'r',
             'household_position_std': 's',
             'household_family_no': 't',
-            'hh_id': 2,
+            'hh_id': '2',
             'occupation': 'u',
             'place_name': 'v',
             'land_register_address': 'w',
@@ -186,7 +186,7 @@ class TestPersonAppearance(unittest.TestCase):
             'county': '1',
             'state_region': '2',
             'transcription_code': '3',
-            'transcription_id': 3,
+            'transcription_id': '3',
             'birth_place': '4',
             'birth_place_clean': '5',
             'birth_place_parish': '6',
@@ -202,15 +202,29 @@ class TestPersonAppearance(unittest.TestCase):
             'birth_place_koebstad_std': '16',
             'source_reference': '17',
             'transcriber_comments': '18',
-            'source_year': 4,
+            'source_year': '1990',
             'event_type': '19',
             'role': '20'
         }
 
         pa = PersonAppearance.from_dict(d)
-        d['pa_id'] = pa.pa_id
+        d['pa_id'] = int(pa.pa_id)
         d['id'] = pa.id
-        d['source_id'] = pa.source_id
+        d['source_id'] = int(pa.source_id)
+
+        d['age_clean'] = float(d['age_clean'])
+        d['source_year'] = int(d['source_year'])
+        d['hh_id'] = int(d['hh_id'])
+        d['transcription_id'] = int(d['transcription_id'])
+        
+        d['first_names'] = [d['first_names']]
+        d['patronyms'] = [d['patronyms']]
+        d['family_names'] = [d['family_names']]
+        d['uncat_names'] = [d['uncat_names']]
+        d['maiden_family_names'] = [d['maiden_family_names']]
+        d['maiden_patronyms'] = [d['maiden_patronyms']]
+        d['all_possible_patronyms'] = [d['all_possible_patronyms']]
+        d['all_possible_family_names'] = [d['all_possible_family_names']]
         
         self.assertEqual(pa.es_document(), d)
 
