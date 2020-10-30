@@ -185,7 +185,7 @@ def mapping_pa_properties():
         'gender': {'type': 'text' }, # Gender as transcribed
         'gender_clean': {'type': 'text' }, # Gender after removing unwanted characters
         'gender_std': {'type': 'keyword' }, # Standardized gender. A result of predicting the gender based on the name (also for records not originally coming with a gender)
-        'age': {'type': 'string' }, # Age as transcribed
+        'age': {'type': 'text' }, # Age as transcribed
         'age_clean': {'type': 'float' }, # age after cleaning and converting to floats
         'name': {'type': 'text' }, # Name as transcribed
         'name_clean': {'type': 'text' }, # lowercase Name after removing unwanted characters
@@ -762,24 +762,27 @@ if __name__ == "__main__":
     subparsers = parser.add_subparsers(help='The command to run.', dest='cmd')
 
     setup_parser = subparsers.add_parser('setup')
+    setup_parser.add_argument('--es-host', required=True)
 
     index_parser = subparsers.add_parser('index')
     index_parser.add_argument('--csv-dir', type=lambda p: Path(p).resolve(), required=True)
+    index_parser.add_argument('--es-host', required=True)
 
     index_sqlite_parser = subparsers.add_parser('index-sqlite')
     index_sqlite_parser.add_argument('--sqlite-db', type=lambda p: Path(p).resolve(), required=True)
+    index_sqlite_parser.add_argument('--es-host', required=True)
 
     args = parser.parse_args()
     
-    #es = Elasticsearch(hosts=["52.215.59.213:1234", "52.215.59.213:9300"])
-    es = Elasticsearch(hosts=["https://data.link-lives.dk"])
-    es.info()
     if args.cmd == 'setup':
+        es = Elasticsearch(hosts=[args.es_host])
+
         print("Deleting indices")
-        try:
-            es.indices.delete("links,lifecourses,pas")
-        except:
-            pass
+        for index in ['pas','links','lifecourses']:
+            try:
+                es.indices.delete(index)
+            except:
+                pass
 
         print("Setting up indices")
         print(" => Creating links index")
@@ -797,12 +800,14 @@ if __name__ == "__main__":
         print(" => Putting pas mapping")
         es.indices.put_mapping(index='pas', body=mappings_index_pas())
     elif args.cmd == 'index-sqlite':
+        es = Elasticsearch(hosts=[args.es_host])
         if not args.sqlite_db.is_file():
             print(f"Error: Could not find sqlite db {args.sqlite_db}")
             sys.exit(1)
         print(f'Indexing sqlite db {args.sqlite_db}')
         index(str(args.sqlite_db), es)
     elif args.cmd == 'index':
+        es = Elasticsearch(hosts=[args.es_host])
         if not args.csv_dir.is_dir():
             print(f'Error: Path does not exist or is not a directory: {args.csv_dir}')
             sys.exit(1)
