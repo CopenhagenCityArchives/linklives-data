@@ -345,7 +345,8 @@ class TestElasticSearchHelpers(unittest.TestCase):
 
 class TestCsvFileHelpers(unittest.TestCase):
 
-    def test_csv_read_pas_single_csv_no_life_courses_no_links(self):
+    @patch('builtins.print')
+    def test_csv_read_pas_single_csv_no_life_courses_no_links(self, mock_print):
         csv1 = MagicMock()
         csv1.open = unittest.mock.mock_open(read_data="id$source_year$name\n123$1845$Mads")
         
@@ -359,8 +360,10 @@ class TestCsvFileHelpers(unittest.TestCase):
 
         with self.assertRaises(StopIteration):
             next(iterator)
+        
 
-    def test_csv_read_pas_empty_values_none(self):
+    @patch('builtins.print')
+    def test_csv_read_pas_empty_values_none(self, mock_print):
         csv1 = MagicMock()
         csv1.open = unittest.mock.mock_open(read_data="id$source_year$birth_place$name\n123$1845$landsbylille$")
 
@@ -368,7 +371,8 @@ class TestCsvFileHelpers(unittest.TestCase):
 
         self.assertIsNone(pa.name)
     
-    def test_csv_read_pas_multi_csv(self):
+    @patch('builtins.print')
+    def test_csv_read_pas_multi_csv(self, mock_print):
         csv1 = MagicMock()
         csv1.open = unittest.mock.mock_open(read_data="id$source_year$birth_place\n123$1845$landsbylille")
         csv2 = MagicMock()
@@ -403,6 +407,14 @@ class TestCsvFileHelpers(unittest.TestCase):
 
         with self.assertRaises(StopIteration):
             next(iterator)
+    
+    @patch('builtins.print')
+    def test_csv_read_pas_print(self, mock_print):
+        csv1 = MagicMock()
+        csv1.__str__ = MagicMock(return_value='mock csv name')
+        csv1.open = unittest.mock.mock_open(read_data="id$source_year$birth_place\n123$1845$landsbylille")
+        next(csv_read_pas([csv1], {}, {}))
+        mock_print.assert_called_with(' => -> Indexing census data from mock csv name')
 
 if __name__ == '__main__':
     unittest.main()
