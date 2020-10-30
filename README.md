@@ -28,14 +28,19 @@ The following python packages are dependencies
 Running the indexing script
 ---------------------------
 
-The `index.py` script accepts a few different commands
+The `index.py` script accepts a few different commands:
 
- * `index.py setup` creates the elasticsearch indices and sets up the
-   mappings of them. This must be done before indexing the documents.
+ * `index.py setup --es-host <ES HOST>` creates the elasticsearch indices at
+   `ES HOST` and sets up the mappings of them. This must be done before
+   indexing the documents.
 
- * `index.py index <SQLITE DB>` indexes the person appearance, link, and life course
-   documents in the elasticsearch database. The setup must have created
-   the indices beforehand.
+ * `index.py index --es-host <ES HOST> --csv-dir <CSV DIR>` indexes a directory
+   csv files located at `CSV DIR` into the Elasticsearch host `ES HOST`.
+
+ * `index.py index-sqlite --es-host <ES HOST> --sqlite-db <SQLITE DB>` legacy
+   indexing method for sqlite databases. Indexes the person appearance, link,
+   and life course documents in the elasticsearch database. The setup must have
+   created the indices beforehand.
 
 Elasticsearch structure
 -----------------------
