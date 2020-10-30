@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, call
 from index import PersonAppearance, csv_pa_bulk_actions, csv_pas_bulk_actions, csv_read_pas
 
 
@@ -415,6 +415,16 @@ class TestCsvFileHelpers(unittest.TestCase):
         csv1.open = unittest.mock.mock_open(read_data="id$source_year$birth_place\n123$1845$landsbylille")
         next(csv_read_pas([csv1], {}, {}))
         mock_print.assert_called_with(' => -> Indexing census data from mock csv name')
+    
+    @patch('builtins.print')
+    def test_csv_read_pas_print_error(self, mock_print):
+        csv1 = MagicMock()
+        csv1.__str__ = MagicMock(return_value='mock csv name')
+        csv1.open = unittest.mock.mock_open(read_data="value\nnothing")
+        with self.assertRaises(StopIteration):
+            next(csv_read_pas([csv1], {}, {}))
+        self.assertEqual(mock_print.call_count, 2)
+        mock_print.assert_has_calls([call(' => -> Indexing census data from mock csv name'), call(' => -> Error: KeyError(\'id\') line=2 file=mock csv name')])
 
 if __name__ == '__main__':
     unittest.main()

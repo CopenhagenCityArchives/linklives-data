@@ -668,14 +668,15 @@ def csv_read_pas(csv_files, pa_life_courses, pa_links):
     """
     for csv_path in csv_files:
         print(f' => -> Indexing census data from {csv_path}')
-        line = 2
+        line = 1
         with csv_path.open('r', encoding='utf-8') as csvfile:
             for item in csv.DictReader(csvfile, delimiter='$', quotechar='"', ):
+                line += 1
                 try:
                     pa = PersonAppearance.from_dict(item)
                 except Exception as e:
-                    print(f"{repr(e)} line={line} file={csv_path}")
-                line += 1
+                    print(f" => -> Error: {repr(e)} line={line} file={csv_path}")
+                    continue
                 
                 # retrieve the life course ids that the person appearance belongs to
                 life_course_ids = []
