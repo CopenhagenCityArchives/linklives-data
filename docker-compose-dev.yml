@@ -7,17 +7,32 @@ services:
       dockerfile: elasticsearch.Dockerfile
       context: ./elasticsearch
     ports: 
-      - "80:9200"
+      - "9200:9200"
       - "9300:9300"
     environment:
       discovery.type: single-node
+  nodejs:
+    container_name: nodejs
+    volumes:
+      - ./nodejs:/usr/src/app
+    build:
+      dockerfile: nodejs.dev.Dockerfile
+      context: ./nodejs
+    working_dir: /usr/src/app
+    command: nodemon --verbose --legacy-watch --exec ts-node ./src/server.ts
+    ports: 
+      - "80:80"
+    depends_on:
+      - ll-es
   indexer:
-    image: python:3.7
+    build:
+      dockerfile: indexer.dev.Dockerfile
+      context: ./indexer
     container_name: indexer
     volumes:
       - ./indexer:/indexer
-    cwd: /indexer
-    command: pip install -r requirements.txt 
+    working_dir: /indexer
+    command: bash -c "pip install -r requirements.txt && python index.py setup --es-host ll-es:9200 && python index.py index --es-host ll-es:9200 --csv-dir /indexer/csv-index-text"
     depends_on:
       - ll-es
     links:
