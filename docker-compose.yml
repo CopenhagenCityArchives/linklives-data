@@ -7,10 +7,17 @@ services:
       dockerfile: elasticsearch.Dockerfile
       context: ./elasticsearch
     ports: 
-      - "80:9200"
+      - "9200:9200"
       - "9300:9300"
-    environment:
-      discovery.type: single-node
+  nodejs:
+    container_name: nodejs
+    build:
+      dockerfile: nodejs.Dockerfile
+      context: ./nodejs
+    ports: 
+      - "80:80"
+    depends_on:
+      - ll-es      
   indexer:
     container_name: indexer
     build: 
