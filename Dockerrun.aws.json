@@ -25,7 +25,6 @@
             "name": "linklives-elasticsearch",
             "image": "282251075226.dkr.ecr.eu-west-1.amazonaws.com/linklives-elasticsearch:latest",
             "essential": true,
-            "memory": 2500,
             "environment":[
                 {
                     "name": "discovery.type",
