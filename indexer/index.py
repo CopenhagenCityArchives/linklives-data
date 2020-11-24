@@ -1,6 +1,7 @@
 import sqlite3
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
+from elasticsearch.helpers import parallel_bulk
 from elasticsearch.exceptions import RequestError
 from math import ceil
 from pathlib import Path
@@ -9,117 +10,6 @@ import csv
 
 CHUNK_SIZE = 10000
 PA_IGNORE_KEYS = ["life_course_id", "link_id", "method_id", "score"]
-
-
-def index(sqlite_db, es):
-    print(" => reading sources")
-    sources = list(read_sources(sqlite_db))
-
-    print(" => creating source readers")
-    readers = {source['source_id']: {'reader': read_source_chunks(sqlite_db, source), 'pointer': 0, 'data': None} for source in sources}
-
-    print(" => indexing data")
-    life_course_count = 0
-    pa_count = 0
-    link_count = 0
-    print_counter = 0
-    while True:
-        print_counter += 1
-        life_course_id = get_life_course_id(readers)
-
-        # this means no more data
-        if life_course_id is None:
-            break
-        
-        life_course = generate_life_course(readers, life_course_id)
-
-        pa_count += len(set([(pa['pa_id'], pa['source_id']) for pa in life_course]))
-        
-        # generate the links of the life course
-        links = {}
-        for pa in life_course:
-            if pa['link_id'] not in links:
-                links[pa['link_id']] = [pa]
-            else:
-                links[pa['link_id']].append(pa)
-
-        for link_id in links:
-            index_link(link_id, life_course_id, links[link_id])
-            link_count += 1
-
-        index_life_course(life_course_id, life_course)
-        life_course_count += 1
-
-        if print_counter == 100:
-            print_counter = 0
-            print(f" => person appearances: {pa_count}, links: {link_count}, life courses: {life_course_count}", end="\r")
-    print(f" => person appearances: {pa_count}, links: {link_count}, life courses: {life_course_count}")
-
-
-def get_life_course_id(readers):
-    life_course_id = None
-    
-    for source_id in readers:
-        data = reader_peek(readers, source_id)
-
-        if data is not None and (life_course_id is None or life_course_id > data['life_course_id']):
-            life_course_id = data['life_course_id']
-    
-    return life_course_id
-
-
-def reader_peek(readers, source_id):
-    reader = readers[source_id]
-
-    if reader['data'] is None or reader['pointer'] == len(reader['data']):
-        reader['data'] = next(reader['reader'])
-        reader['pointer'] = 0
-    
-    if len(reader['data']) > 0:
-        return reader['data'][reader['pointer']]
-
-
-def generate_life_course(readers, life_course_id):
-    life_course = []
-
-    for source_id in readers:
-        data = reader_peek(readers, source_id)
-        if data is not None and data['life_course_id'] == life_course_id:
-            life_course.append(data)
-            readers[source_id]['pointer'] += 1
-
-            # index the pa when added to life course, because it wont be read anymore
-            index_pa(data)
-        else:
-            # go to next reader to prevent unneccesary double check
-            continue
-
-        # handle pas being part of two links by getting the next too
-        data = reader_peek(readers, source_id)
-        if data is not None and data['life_course_id'] == life_course_id:
-            life_course.append(data)
-            readers[source_id]['pointer'] += 1
-
-    return life_course
-
-
-def read_sources(sqlite_db):
-    with sqlite3.connect(sqlite_db) as sqlite:
-        sqlite.row_factory = sqlite3.Row
-        c = sqlite.cursor()
-        for row in c.execute("SELECT * FROM Sources"):
-            yield dict(row)
-
-
-def read_source_chunks(sqlite_db, source):
-    with sqlite3.connect(sqlite_db) as sqlite:
-        sqlite.row_factory = sqlite3.Row
-        c = sqlite.cursor()
-        count = list(c.execute(f'SELECT count(*) as count FROM {source["table_name"]}'))[0]['count']
-        offset = 0
-        while offset < count:
-            yield list(c.execute(f"SELECT * FROM {source['table_name']} p JOIN Links l ON l.source_id = {source['source_id']} AND l.pa_id = p.pa_id JOIN Life_courses lc ON lc.link_id = l.link_id ORDER BY lc.life_course_id, l.link_id, p.pa_id ASC LIMIT {offset},{CHUNK_SIZE}"))
-            offset += CHUNK_SIZE
 
 
 def index_pa(pa):
@@ -240,6 +130,7 @@ def mapping_pa_properties():
         'source_year': {'type': 'integer' }, # year of the event
         'event_type': {'type': 'text' }, # type of event (e.g. census, burial, baptism, etc.)
         'role': {'type': 'text' }, # the role of the record in the source (e.g. mother, father, child, deceased, bride, etc.)
+        'last_updated': {'type': 'text'} # the date of the last update of the pa
     }
 
 def mappings_index_lifecourses():
@@ -266,13 +157,31 @@ def mappings_index_links():
         "dynamic": False,
         "properties": {
             "link_id": {"type": "integer"},
-            "method": {"type": "keyword"},
+            "method_type": {"type": "keyword"},
+            "method_subtype1": {"type": "keyword"},
+            "method_description": {"type": "keyword"},
             "score": {"type": "float"},
             "life_course_ids": {"type": "integer"},
             "person_appearance": {
                 "type": "nested",
                 "properties": mapping_pa_properties()
             }
+        }
+    }
+
+def mappings_index_sources():
+    """
+    Return the Elasticsearch mappings for the 'sources' index containing sources
+    """
+
+    return {
+        "dynamic": False,
+        "properties": {
+            "source_id": {"type": "integer"},
+            "name": { "type": "integer"},
+            "description": {"type": "keyword"},
+            "done_percentage": {"type": "integer"},
+            "link": {"type": "keyword"}
         }
     }
 
@@ -322,6 +231,7 @@ class PersonAppearance:
         """
         Initialize a person appearance with just the id properties defined.
         """
+
         self.id = f'{source_id}-{pa_id}'
         self.pa_id = pa_id
         self.source_id = source_id
@@ -380,7 +290,7 @@ class PersonAppearance:
         self.source_year = None # processed	integer	census	year of the event
         self.event_type = None # processed	string	census	type of event (e.g. census, burial, baptism, etc.)
         self.role = None # processed	string	census	the role of the record in the source (e.g. mother, father, child, deceased, bride, etc.)
-
+        self.last_updated = "2020-11-16"
 
     def es_document(self):
         """
@@ -447,7 +357,8 @@ class PersonAppearance:
             'birth_place_place': self.birth_place_place,
             'birth_place_county_std': self.birth_place_county_std,
             'birth_place_parish_std': self.birth_place_parish_std,
-            'birth_place_koebstad_std': self.birth_place_koebstad_std
+            'birth_place_koebstad_std': self.birth_place_koebstad_std,
+            'last_updated': self.last_updated
         }
 
     @staticmethod
@@ -467,7 +378,8 @@ class PersonAppearance:
         Returns:
             A PersonAppearance instance.
         """
-        pa = PersonAppearance(data['id'], data['source_year'])
+
+        pa = PersonAppearance(data['id'], data['source_id'])
 
         del data['id']
 
@@ -527,33 +439,123 @@ class LifeCourse:
 
         return lc
 
-    
-def source_info(source_id):
+class Source:
     """
-    Get the source information from the id.
+    A source
+    """
+
+    def __init__(self, source_id):
+        """
+        Initialize an empty source
+        
+        args:
+            source_id: The unique identifier of the source
+            year: The year of the source
+            type: The type of the source (i.e. census or begravelser)
+            description: A description of the source
+            link: A link to further informations about the source
+        """
+        self.source_id = source_id
+        self.description = None
+        self.type = None
+        self.link = None
+        self.filename = None
+
+    def es_document(self):
+        """
+        Get a dictionary that is an Elasticsearch document.
+
+        Returns:
+        A dictionary containing the data of this  source in the
+        format of an Elasticsearch document. 
+        """
+
+        return {
+            'id': self.source_id,
+            'source_id': int(self.source_id),
+            'year': int(self.year) if self.year is not None else None,
+            'type': self.type,
+            'description': self.description if self.description is not None else None,
+            'link': self.link if self.link is not None else None
+        }    
+
+    @staticmethod
+    def from_dict(data):
+        """
+        Instantiate a Source object from a given dictionary.
+
+        Args:
+            data: A dictionary containing data about the person appearance.
+        
+        Returns:
+            A Source instance.
+        """
+        source = Source(data['source_id'])
+
+        del data['source_id']
+
+        for prop in data:
+            if data[prop] == '':
+                setattr(source, prop, None)
+            else:
+                setattr(source, prop, data[prop])
+
+        return source           
+
+
+def method_info(method_id):
+    """
+    Get the method information from the id.
 
     Args:
-        source_id: The unique identifier of the source.
+        method_id: The unique identifier of the method.
 
     Returns:
-        A dictionary containing the source metadata information, ie. the 'year'
-        and 'type' of the source.
+        A dictionary containing the method metadata information, ie. the 'method'
+        and 'description' of the source.
     """
-    sources = {
-        '0': { 'year': '1787', 'type': 'census' },
-        '1': { 'year': '1801', 'type': 'census' },
-        '2': { 'year': '1834', 'type': 'census' },
-        '3': { 'year': '1840', 'type': 'census' },
-        '4': { 'year': '1845', 'type': 'census' },
-        '5': { 'year': '1850', 'type': 'census' },
-        '6': { 'year': '1860', 'type': 'census' },
-        '7': { 'year': '1880', 'type': 'census' },
-        '8': { 'year': '1885', 'type': 'census' },
-        '9': { 'year': '1901', 'type': 'census' }
+
+    methods = {
+        '0': { 'type': 'Rule Based', 'subtype1': 'primary', 'description': 'rule based links made from personal information only (age, gender, name, birth place)' },
+        '1': { 'type': 'Rule Based', 'subtype1': 'household', 'description': 'links based on household links made by primary links' },
+        '2': { 'type': 'Manual', 'subtype1': '', 'description': 'hand made links' }
     }
     
-    return sources[str(source_id)]
+    return methods[str(method_id)]    
 
+def getSourceIdByFilePath(sources, filename):
+    for s in sources:
+        if sources[s].filename is not None and filename.find(sources[s].filename) != -1:
+            return sources[s].source_id
+    raise f'could not map filename {filename} to source'
+
+def bulk_insert_actions(es, actions):
+    i = 0
+    for success, info in parallel_bulk(es, actions):
+        i += 1
+
+        if i%10000 == 0:
+            print(f'indexed {i} documents')
+
+        if not success:
+            print('A document failed:', info)
+
+def csv_index_sources(es, sources):
+    """
+    Bulk indexes documents in the 'life_courses' index.
+    
+    This only creates the empty life course documents without any person
+    appearances, which are added to this index by the `csv_index_pa` function.
+
+    Args:
+        es: An Elasticsearch client
+        life_courses: An iterable of life course objects
+        bulk_helper: Helper function for Elasticsearch _bulk endpoint
+    """
+   # for s in sources:
+    #    print(s.es_document())
+    actions = [{'_op_type': 'index', '_index': 'sources', '_id': s.source_id, "source": s.es_document() } for s in sources]
+    bulk_insert_actions(es, actions)
 
 def csv_index_life_courses(es, life_courses, bulk_helper=bulk):
     """
@@ -568,7 +570,7 @@ def csv_index_life_courses(es, life_courses, bulk_helper=bulk):
         bulk_helper: Helper function for Elasticsearch _bulk endpoint
     """
     actions = [{'_op_type': 'index', '_index': 'lifecourses', '_id': lc[''], 'life_course_id': lc[''], 'person_appearance': [] } for lc in life_courses]
-    bulk_helper(es, actions)
+    bulk_insert_actions(es, actions)
 
 
 def csv_index_links(es, links, bulk_helper=bulk):
@@ -584,7 +586,8 @@ def csv_index_links(es, links, bulk_helper=bulk):
         bulk_helper: Helper function for Elasticsearch _bulk endpoint
     """
     actions = [{'_op_type': 'index', '_index': 'links', '_id': li['link_id'], 'link_id': li['link_id'], 'link': li, 'person_appearance': [] } for li in links]
-    bulk_helper(es, actions)
+    
+    bulk_insert_actions(es, actions)
 
 
 def csv_pa_bulk_actions(pa, life_courses, links):
@@ -619,8 +622,9 @@ def csv_pa_bulk_actions(pa, life_courses, links):
                 }
             }
         }
-    
+
     for life_course in life_courses:
+
         yield {
             '_op_type': 'update',
             '_index': 'lifecourses',
@@ -652,7 +656,7 @@ def csv_pas_bulk_actions(pas):
             yield action
 
 
-def csv_read_pas(csv_files, pa_life_courses, pa_links):
+def csv_read_pas(sources, csv_files, pa_life_courses, pa_links):
     """
     Reads CSV files containing person appearance data, and generates tuples of
     PersonAppearance objects, lists of life course ids, and lists of link ids.
@@ -673,6 +677,8 @@ def csv_read_pas(csv_files, pa_life_courses, pa_links):
             for item in csv.DictReader(csvfile, delimiter='$', quotechar='"', ):
                 line += 1
                 try:
+                    source_id = getSourceIdByFilePath(sources, csv_path.name)
+                    item['source_id'] = source_id
                     pa = PersonAppearance.from_dict(item)
                 except Exception as e:
                     print(f" => -> Error: {repr(e)} line={line} file={csv_path}")
@@ -680,6 +686,7 @@ def csv_read_pas(csv_files, pa_life_courses, pa_links):
                 
                 # retrieve the life course ids that the person appearance belongs to
                 life_course_ids = []
+
                 if (pa.pa_id, pa.source_id) in pa_life_courses:
                     life_course_ids = pa_life_courses[(pa.pa_id, pa.source_id)]
                 
@@ -699,10 +706,23 @@ def csv_index(es, path):
         path: Path to the directory containing life course, link and source data.
     """
     csv_dir = Path(path)
+    sources = {}
     life_courses = {}
     links = {}
     pa_life_courses = {}
     pa_links = {}
+
+    for csv_path in [f for f in csv_dir.iterdir() if f.suffix == '.csv' and f.stem.startswith('sources')]:
+        print(f' => Loading sources data from {csv_path}')
+        with csv_path.open('r', encoding='utf-8') as csvfile:
+            for item in csv.DictReader(csvfile, delimiter=';', quotechar='"'):
+                source_id = item['source_id']
+
+                # add the soure to the sources dict
+                sources[source_id] = Source.from_dict(item)
+
+    print(f' => -> Loaded {len(sources)} sources')
+
     for csv_path in [f for f in csv_dir.iterdir() if f.suffix == '.csv' and f.stem.startswith('life_courses')]:
         print(f' => Loading life course data from {csv_path}')
         with csv_path.open('r', encoding='utf-8') as csvfile:
@@ -712,14 +732,19 @@ def csv_index(es, path):
                 # add the life course to the life courses dict
                 life_courses[life_course_id] = item
 
+                # Original way: Source defined in specific source column
                 # extract the columns of the life course csv that are pa_ids
-                pa_ids_src = [(key, val) for (key, val) in item.items() if val is not None and key not in ('', 'occurences')]
+                #pa_ids_src = [(key, val) for (key, val) in item.items() if val is not None and key not in ('', 'occurences')]
 
-                # add each pa_id-source_year combination to the pa_life_course dict
-                for (source_year, pa_id) in pa_ids_src:
-                    if (pa_id, source_year) not in pa_life_courses:
-                        pa_life_courses[(pa_id, source_year)] = set()
-                    pa_life_courses[(pa_id, source_year)].add(life_course_id)
+                # get source id and pa id from comma separated pa_ids and sources fields
+                pa_ids_src = zip(item['sources'].split(","),item['pa_ids'].split(","))
+                #print(next(pa_ids_src))
+                # add each pa_id-source_id combination to the pa_life_course dict
+                for source_id, pa_id in pa_ids_src:
+                    if (pa_id, source_id) not in pa_life_courses:
+                        pa_life_courses[(pa_id, source_id)] = set()
+                    pa_life_courses[(pa_id, source_id)].add(life_course_id)
+
     print(f' => -> Loaded {len(life_courses)} life courses')
 
     for csv_path in [f for f in csv_dir.iterdir() if f.suffix == '.csv' and f.stem.startswith('links')]:
@@ -728,6 +753,12 @@ def csv_index(es, path):
             for item in csv.DictReader(csvfile, delimiter='$', quotechar='"'):
                 link_id = item['link_id']
 
+                method = method_info(item['method_id'])
+
+                item['method_type'] = method['type']
+                item['method_subtype1'] = method['subtype1']
+                item['method_description'] = method['description']
+
                 # add the link to the link dict
                 links[link_id] = item
 
@@ -735,19 +766,23 @@ def csv_index(es, path):
                 # get info for the first pa in the link
                 pa_id_1 = item['pa_id1']
                 source_id_1 = item['source_id1']
-                source_1 = source_info(source_id_1)
+                source_1 = sources[source_id_1]
 
                 # get info for the secoond pa in the link
                 pa_id_2 = item['pa_id2']
                 source_id_2 = item['source_id2']
-                source_2 = source_info(source_id_2)
+                source_2 = sources[source_id_2]
 
                 # add each info to the pa_links dictioanry
-                for pa_id, source_year in [(pa_id_1, source_1['year']), (pa_id_2, source_2['year'])]:
-                    if (pa_id, source_year) not in pa_links:
-                        pa_links[(pa_id, source_year)] = set()
-                    pa_links[(pa_id, source_year)].add(link_id)
+                for pa_id, source_id in [(pa_id_1, source_1.source_id), (pa_id_2, source_2.source_id)]:
+                    if (pa_id, source_id) not in pa_links:
+                        pa_links[(pa_id, source_id)] = set()
+                    pa_links[(pa_id, source_id)].add(link_id)
+                    
     print(f' => -> Loaded {len(links)} links')
+
+    #print(f' => Indexing sources')
+    csv_index_sources(es, sources.values())
 
     print(f' => Indexing empty life courses')
     csv_index_life_courses(es, life_courses.values())
@@ -756,8 +791,9 @@ def csv_index(es, path):
     csv_index_links(es, links.values())
 
     print(f' => Indexing source data')
-    pas = csv_read_pas([f for f in csv_dir.iterdir() if f.stem.startswith('census')], pa_life_courses, pa_links)
-    bulk(es, csv_pas_bulk_actions(pas))
+    pas = csv_read_pas(sources, [f for f in csv_dir.iterdir() if f.stem.startswith('census')], pa_life_courses, pa_links)
+
+    bulk_insert_actions(es, csv_pas_bulk_actions(pas))
 
 
 if __name__ == "__main__":
@@ -783,16 +819,22 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     if args.cmd == 'setup':
-        es = Elasticsearch(hosts=[args.es_host])
+        es = Elasticsearch(hosts=[args.es_host],timeout=30)
 
         print("Deleting indices")
-        for index in ['pas','links','lifecourses']:
+        for index in ['sources','pas','links','lifecourses']:
             try:
                 es.indices.delete(index)
             except:
                 pass
 
         print("Setting up indices")
+
+        print(" => Creating sources index")
+        es.indices.create('sources')
+        print(" => Putting sources mapping")
+        es.indices.put_mapping(index='sources', body=mappings_index_sources())
+
         print(" => Creating links index")
         es.indices.create('links')
         print(" => Putting links mapping")
@@ -807,13 +849,7 @@ if __name__ == "__main__":
         es.indices.create('pas')
         print(" => Putting pas mapping")
         es.indices.put_mapping(index='pas', body=mappings_index_pas())
-    elif args.cmd == 'index-sqlite':
-        es = Elasticsearch(hosts=[args.es_host])
-        if not args.sqlite_db.is_file():
-            print(f"Error: Could not find sqlite db {args.sqlite_db}")
-            sys.exit(1)
-        print(f'Indexing sqlite db {args.sqlite_db}')
-        index(str(args.sqlite_db), es)
+
     elif args.cmd == 'index':
         es = Elasticsearch(hosts=[args.es_host])
         if not args.csv_dir.is_dir():
