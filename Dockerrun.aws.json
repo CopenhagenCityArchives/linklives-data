@@ -32,7 +32,7 @@
                     "value": "single-node"
                 },
                 {
-                    "name": "ES_JAVA_OPT",
+                    "name": "ES_JAVA_OPTS",
                     "value": "-Xms24g -Xmx24g"
                 }
             ],
