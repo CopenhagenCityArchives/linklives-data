@@ -16,7 +16,7 @@ services:
     container_name: indexer
     volumes:
       - ./indexer:/indexer
-    cwd: /indexer
+    working_dir: /indexer
     command: pip install -r requirements.txt 
     depends_on:
       - ll-es
