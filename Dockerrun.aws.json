@@ -30,6 +30,10 @@
                 {
                     "name": "discovery.type",
                     "value": "single-node"
+                },
+                {
+                    "name": "ES_JAVA_OPT",
+                    "value": "-Xms24g -Xmx24g"
                 }
             ],
             "portMappings": [
