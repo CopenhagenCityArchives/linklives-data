@@ -8,7 +8,7 @@ from pathlib import Path
 import csv
 
 
-CHUNK_SIZE = 10000
+CHUNK_SIZE = 3000
 PA_IGNORE_KEYS = ["life_course_id", "link_id", "method_id", "score"]
 
 
@@ -609,7 +609,7 @@ def getSourceIdByFilePath(sources, filename):
 
 def bulk_insert_actions(es, actions):
     i = 0
-    for success, info in parallel_bulk(es, actions):
+    for success, info in parallel_bulk(es, actions, chunk_size=CHUNK_SIZE):
         i += 1
 
         if i%10000 == 0:
