@@ -130,7 +130,31 @@ def mapping_pa_properties():
         'source_year': {'type': 'integer' }, # year of the event
         'event_type': {'type': 'text' }, # type of event (e.g. census, burial, baptism, etc.)
         'role': {'type': 'text' }, # the role of the record in the source (e.g. mother, father, child, deceased, bride, etc.)
-        'last_updated': {'type': 'text'} # the date of the last update of the pa
+        'birth_year': {'type': 'integer'}, # year of birth,
+        
+        'dateOfBirth': {'type': 'text'},
+        'dateOfDeath': {'type': 'text'},
+        'yearOfBirth': {'type': 'text'},
+        'birth_year': {'type': 'text'},
+        'ageYears': {'type': 'integer'},
+        'ageMonths': {'type': 'integer'},
+        'ageWeeks': {'type': 'integer'},
+        'ageDays': {'type': 'integer'},
+        'ageHours': {'type': 'integer'},
+        'first_names_clean': {'type': 'text'},
+        'lastname_clean': {'type': 'text'},
+        'birthname_clean': {'type': 'text'},
+        'street': {'type': 'text'},
+        'street_number': {'type': 'integer'},
+        'letter': {'type': 'text'},
+        'floor': {'type': 'text'},
+        'positions': {'type': 'text'},
+        'relationstypes': {'type': 'text'},
+        
+        'first_names_sortable': {'type': 'keyword'}, # sortable instance of first_names,
+        'family_names_sortable': {'type': 'keyword'}, # sortable instance of family_names,
+        'last_updated': {'type': 'text'}, # the date of the last update of the pa
+        'pa_entry_permalink': {'type': 'text'} # the permalink to the entry of the pa
     }
 
 def mappings_index_lifecourses():
@@ -236,6 +260,8 @@ class PersonAppearance:
         self.pa_id = pa_id
         self.source_id = source_id
 
+        self.id_cph = None
+
         self.gender = None # original	string	census	Gender as transcribed
         self.gender_clean = None # processed	string	census	Gender after removing unwanted characters
         self.gender_std = None # processed	string (m or k)	census	Standardized gender. A result of predicting the gender based on the name (also for records not originally coming with a gender)
@@ -290,7 +316,32 @@ class PersonAppearance:
         self.source_year = None # processed	integer	census	year of the event
         self.event_type = None # processed	string	census	type of event (e.g. census, burial, baptism, etc.)
         self.role = None # processed	string	census	the role of the record in the source (e.g. mother, father, child, deceased, bride, etc.)
-        self.last_updated = "2020-11-16"
+        
+        # burials
+        self.dateOfBirth = None
+        self.dateOfDeath = None
+        self.yearOfBirth = None
+        self.birth_year = None
+        self.ageYears = None
+        self.ageMonths = None
+        self.ageWeeks = None
+        self.ageDays = None
+        self.ageHours = None
+        self.first_names_clean = None
+        self.lastname_clean = None
+        self.birthname_clean = None
+        self.street = None
+        self.street_number = None
+        self.letter = None
+        self.floor = None
+        self.positions = None
+        self.relationstypes = None
+
+        # special fields
+        self.first_names_sortable = None 
+        self.family_names_sortable = None
+        self.last_updated = None
+        self.pa_entry_permalink = None
 
     def es_document(self):
         """
@@ -358,7 +409,32 @@ class PersonAppearance:
             'birth_place_county_std': self.birth_place_county_std,
             'birth_place_parish_std': self.birth_place_parish_std,
             'birth_place_koebstad_std': self.birth_place_koebstad_std,
-            'last_updated': self.last_updated
+            
+            # burials
+            'dateOfBirth': self.dateOfBirth,
+            'dateOfDeath': self.dateOfDeath,
+            'yearOfBirth': self.yearOfBirth,
+            'birth_year': self.birth_year,
+            'ageYears': self.ageYears,
+            'ageMonths': self.ageMonths,
+            'ageWeeks': self.ageWeeks,
+            'ageDays': self.ageDays,
+            'ageHours': self.ageHours,
+            'first_names_clean': self.first_names_clean,
+            'lastname_clean': self.lastname_clean,
+            'birthname_clean': self.birthname_clean,
+            'street': self.street,
+            'street_number': self.street_number,
+            'letter': self.letter,
+            'floor': self.floor,
+            'positions': self.positions,
+            'relationstypes': self.relationstypes,
+
+            # special fields
+            'first_names_sortable': self.first_names.replace(',',' ') if self.first_names is not None else None,
+            'family_names_sortable': self.all_possible_patronyms.split(',')[0] if self.all_possible_patronyms is not None else None,
+            'last_updated': "2020-11-16",
+            'pa_entry_permalink': f"https://kbharkiv.dk/permalink/post/1-{self.id_cph}" if self.id_cph is not None else None
         }
 
     @staticmethod
@@ -460,6 +536,7 @@ class Source:
         self.type = None
         self.link = None
         self.filename = None
+        self.institution = None
 
     def es_document(self):
         """
@@ -475,8 +552,9 @@ class Source:
             'source_id': int(self.source_id),
             'year': int(self.year) if self.year is not None else None,
             'type': self.type,
-            'description': self.description if self.description is not None else None,
-            'link': self.link if self.link is not None else None
+            'description': self.description,
+            'link': self.link,
+            'institution': self.institution
         }    
 
     @staticmethod
@@ -715,11 +793,12 @@ def csv_index(es, path):
     for csv_path in [f for f in csv_dir.iterdir() if f.suffix == '.csv' and f.stem.startswith('sources')]:
         print(f' => Loading sources data from {csv_path}')
         with csv_path.open('r', encoding='utf-8') as csvfile:
-            for item in csv.DictReader(csvfile, delimiter=';', quotechar='"'):
+            for item in csv.DictReader(csvfile, delimiter='$', quotechar='"'):
                 source_id = item['source_id']
 
                 # add the soure to the sources dict
                 sources[source_id] = Source.from_dict(item)
+
 
     print(f' => -> Loaded {len(sources)} sources')
 
@@ -791,7 +870,7 @@ def csv_index(es, path):
     csv_index_links(es, links.values())
 
     print(f' => Indexing source data')
-    pas = csv_read_pas(sources, [f for f in csv_dir.iterdir() if f.stem.startswith('census')], pa_life_courses, pa_links)
+    pas = csv_read_pas(sources, [f for f in csv_dir.iterdir() if f.stem.startswith('census') or f.stem.startswith('cph_burials')], pa_life_courses, pa_links)
 
     bulk_insert_actions(es, csv_pas_bulk_actions(pas))
 
