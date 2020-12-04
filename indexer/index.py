@@ -898,10 +898,6 @@ if __name__ == "__main__":
     index_parser.add_argument('--csv-dir', type=lambda p: Path(p).resolve(), required=True)
     index_parser.add_argument('--es-host', required=True)
 
-    index_sqlite_parser = subparsers.add_parser('index-sqlite')
-    index_sqlite_parser.add_argument('--sqlite-db', type=lambda p: Path(p).resolve(), required=True)
-    index_sqlite_parser.add_argument('--es-host', required=True)
-
     args = parser.parse_args()
     
     if args.cmd == 'delete':
