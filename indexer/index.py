@@ -468,7 +468,7 @@ class PersonAppearance:
                     setattr(pa, prop, data[prop])
             except AttributeError:
                 if raise_invalid:
-                    raise
+                    raise Exception(f'invalid prop {pa}, {prop}')
         
         return pa 
 
@@ -605,7 +605,7 @@ def getSourceIdByFilePath(sources, filename):
     for s in sources:
         if sources[s].filename is not None and filename.find(sources[s].filename) != -1:
             return sources[s].source_id
-    raise f'could not map filename {filename} to source'
+    raise Exception(f'could not map filename {filename} to source')
 
 def bulk_insert_actions(es, actions):
     i = 0
