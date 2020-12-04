@@ -5,11 +5,18 @@ from elasticsearch.helpers import parallel_bulk
 from elasticsearch.exceptions import RequestError
 from math import ceil
 from pathlib import Path
+from datetime import datetime
 import csv
 
 
 CHUNK_SIZE = 3000
 PA_IGNORE_KEYS = ["life_course_id", "link_id", "method_id", "score"]
+ALIAS_INDEX_MAPPING = {
+    "sources": None,
+    "pas": None,
+    "links": None,
+    "lifecourses": None
+}
 
 
 def index_pa(pa):
@@ -632,10 +639,10 @@ def csv_index_sources(es, sources):
     """
    # for s in sources:
     #    print(s.es_document())
-    actions = [{'_op_type': 'index', '_index': 'sources', '_id': s.source_id, "source": s.es_document() } for s in sources]
+    actions = [{'_op_type': 'index', '_index': ALIAS_INDEX_MAPPING['sources'], '_id': s.source_id, "source": s.es_document() } for s in sources]
     bulk_insert_actions(es, actions)
 
-def csv_index_life_courses(es, life_courses, bulk_helper=bulk):
+def csv_index_life_courses(es, life_courses):
     """
     Bulk indexes documents in the 'life_courses' index.
     
@@ -647,11 +654,11 @@ def csv_index_life_courses(es, life_courses, bulk_helper=bulk):
         life_courses: An iterable of life course objects
         bulk_helper: Helper function for Elasticsearch _bulk endpoint
     """
-    actions = [{'_op_type': 'index', '_index': 'lifecourses', '_id': lc[''], 'life_course_id': lc[''], 'person_appearance': [] } for lc in life_courses]
+    actions = [{'_op_type': 'index', '_index': ALIAS_INDEX_MAPPING['lifecourses'], '_id': lc[''], 'life_course_id': lc[''], 'person_appearance': [] } for lc in life_courses]
     bulk_insert_actions(es, actions)
 
 
-def csv_index_links(es, links, bulk_helper=bulk):
+def csv_index_links(es, links):
     """
     Bulk indexes documents in the 'links' index.
 
@@ -663,7 +670,7 @@ def csv_index_links(es, links, bulk_helper=bulk):
         link: The link object
         bulk_helper: Helper function for Elasticsearch _bulk endpoint
     """
-    actions = [{'_op_type': 'index', '_index': 'links', '_id': li['link_id'], 'link_id': li['link_id'], 'link': li, 'person_appearance': [] } for li in links]
+    actions = [{'_op_type': 'index', '_index': ALIAS_INDEX_MAPPING['links'], '_id': li['link_id'], 'link_id': li['link_id'], 'link': li, 'person_appearance': [] } for li in links]
     
     bulk_insert_actions(es, actions)
 
@@ -683,7 +690,7 @@ def csv_pa_bulk_actions(pa, life_courses, links):
     """
     yield {
         '_op_type': 'index',
-        '_index': 'pas',
+        '_index': ALIAS_INDEX_MAPPING['pas'],
         '_id': pa.id,
         "person_appearance": pa.es_document()
     }
@@ -691,7 +698,7 @@ def csv_pa_bulk_actions(pa, life_courses, links):
     for link in links:
         yield {
             '_op_type': 'update',
-            '_index': 'links',
+            '_index': ALIAS_INDEX_MAPPING['links'],
             '_id': link,
             'script': {
                 "source": "ctx._source.person_appearance.add(params.pa)",
@@ -705,7 +712,7 @@ def csv_pa_bulk_actions(pa, life_courses, links):
 
         yield {
             '_op_type': 'update',
-            '_index': 'lifecourses',
+            '_index': ALIAS_INDEX_MAPPING['lifecourses'],
             '_id': life_course,
             'script': {
                 "source": "ctx._source.person_appearance.add(params.pa)",
@@ -860,7 +867,7 @@ def csv_index(es, path):
                     
     print(f' => -> Loaded {len(links)} links')
 
-    #print(f' => Indexing sources')
+    print(f' => Indexing sources')
     csv_index_sources(es, sources.values())
 
     print(f' => Indexing empty life courses')
@@ -884,7 +891,7 @@ if __name__ == "__main__":
 
     subparsers = parser.add_subparsers(help='The command to run.', dest='cmd')
 
-    setup_parser = subparsers.add_parser('setup')
+    setup_parser = subparsers.add_parser('delete')
     setup_parser.add_argument('--es-host', required=True)
 
     index_parser = subparsers.add_parser('index')
@@ -901,39 +908,53 @@ if __name__ == "__main__":
         es = Elasticsearch(hosts=[args.es_host],timeout=30)
 
         print("Deleting indices")
-        for index in ['sources','pas','links','lifecourses']:
+        for index in ['sources*','pas*','links*','lifecourses*']:
             try:
                 es.indices.delete(index)
             except:
                 pass
 
-    if args.cmd == 'setup':
+    elif args.cmd == 'index':
         es = Elasticsearch(hosts=[args.es_host],timeout=30)
+
+        # Converting datetime object to string
+        dateTimeObj = datetime.now()
+        timestampStr = dateTimeObj.strftime("%d-%m-%Y_%H-%M-%S")
+
+        print(" => Creating index alias mappings")
+
+        ALIAS_INDEX_MAPPING['sources'] =        f'sources_{timestampStr}'
+        ALIAS_INDEX_MAPPING['links'] =          f'links_{timestampStr}'
+        ALIAS_INDEX_MAPPING['lifecourses'] =    f'lifecourses_{timestampStr}'
+        ALIAS_INDEX_MAPPING['pas'] =            f'pas_{timestampStr}'
 
         print("Setting up indices")
 
-        print(" => Creating sources index")
-        es.indices.create('sources')
+        print(" => Creating sources index" + ALIAS_INDEX_MAPPING['sources'])
+        es.indices.create(ALIAS_INDEX_MAPPING['sources'])
+        
         print(" => Putting sources mapping")
-        es.indices.put_mapping(index='sources', body=mappings_index_sources())
+        es.indices.put_mapping(index=ALIAS_INDEX_MAPPING['sources'], body=mappings_index_sources())
 
         print(" => Creating links index")
-        es.indices.create('links')
+        es.indices.create(ALIAS_INDEX_MAPPING['links'])
+
         print(" => Putting links mapping")
-        es.indices.put_mapping(index='links', body=mappings_index_links())
+        es.indices.put_mapping(index=ALIAS_INDEX_MAPPING['links'], body=mappings_index_links())
 
         print(" => Creating lifecourses index")
-        es.indices.create('lifecourses')   
+        es.indices.create(ALIAS_INDEX_MAPPING['lifecourses'])  
+
         print(" => Putting lifecourse mapping")
-        es.indices.put_mapping(index='lifecourses', body=mappings_index_lifecourses())         
+        es.indices.put_mapping(index=ALIAS_INDEX_MAPPING['lifecourses'], body=mappings_index_lifecourses())         
 
         print(" => Creating pas index")
-        es.indices.create('pas')
-        print(" => Putting pas mapping")
-        es.indices.put_mapping(index='pas', body=mappings_index_pas())
+        es.indices.create(ALIAS_INDEX_MAPPING['pas'])
 
-    elif args.cmd == 'index':
-        es = Elasticsearch(hosts=[args.es_host])
+        print(" => Putting pas mapping")
+        es.indices.put_mapping(index=ALIAS_INDEX_MAPPING['pas'], body=mappings_index_pas())
+
+
         if not args.csv_dir.is_dir():
             print(f'Error: Path does not exist or is not a directory: {args.csv_dir}')
             sys.exit(1)
@@ -944,6 +965,14 @@ if __name__ == "__main__":
             print(f'Error: A request exception occured')
             print(f' => Status code: {e.status_code}, error message: {e.error}')
             print(repr(e.info))
+
+        print(" => Changing aliases")
+        #es.indices.delete_alias('source*','_all')
+        es.indices.put_alias(ALIAS_INDEX_MAPPING['sources'], 'sources')
+        es.indices.put_alias(ALIAS_INDEX_MAPPING['links'], 'links')
+        es.indices.put_alias(ALIAS_INDEX_MAPPING['lifecourses'], 'lifecourses')
+        es.indices.put_alias(ALIAS_INDEX_MAPPING['pas'], 'pas')
+
     else:
         print('Error: Invalid command')
         sys.exit(1)
