@@ -897,7 +897,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     
-    if args.cmd == 'setup':
+    if args.cmd == 'delete':
         es = Elasticsearch(hosts=[args.es_host],timeout=30)
 
         print("Deleting indices")
@@ -906,6 +906,9 @@ if __name__ == "__main__":
                 es.indices.delete(index)
             except:
                 pass
+
+    if args.cmd == 'setup':
+        es = Elasticsearch(hosts=[args.es_host],timeout=30)
 
         print("Setting up indices")
 
