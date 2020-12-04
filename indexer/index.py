@@ -926,7 +926,7 @@ if __name__ == "__main__":
 
         print("Setting up indices")
 
-        print(" => Creating sources index" + ALIAS_INDEX_MAPPING['sources'])
+        print(" => Creating sources index")
         es.indices.create(ALIAS_INDEX_MAPPING['sources'])
         
         print(" => Putting sources mapping")
