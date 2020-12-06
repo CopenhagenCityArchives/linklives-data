@@ -17,6 +17,11 @@ ALIAS_INDEX_MAPPING = {
     "links": None,
     "lifecourses": None
 }
+INDEX_SETTINGS = {
+    "index.refresh_interval": -1,
+    "index.max_result_window": 100,
+    "index.max_inner_result_window": 100
+}
 
 
 def index_pa(pa):
