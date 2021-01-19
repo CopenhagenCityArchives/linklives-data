@@ -24,10 +24,13 @@ script:
   
   # Run tests!
 
+  # set image tag based on branch
+  - sed -i "s/{image-tag}/${IMAGE_TAG}/g" Dockerrun.aws.json
+
   # build and push linklives-elasticsearch image
   - docker build -f ./elasticsearch/elasticsearch.Dockerfile  -t linklives-elasticsearch ./elasticsearch
-  - docker tag linklives-elasticsearch 282251075226.dkr.ecr.eu-west-1.amazonaws.com/linklives-elasticsearch:latest
-  - docker push 282251075226.dkr.ecr.eu-west-1.amazonaws.com/linklives-elasticsearch:latest
+  - docker tag linklives-elasticsearch 282251075226.dkr.ecr.eu-west-1.amazonaws.com/linklives-elasticsearch:${IMAGE_TAG}
+  - docker push 282251075226.dkr.ecr.eu-west-1.amazonaws.com/linklives-elasticsearch:${IMAGE_TAG}
 
 deploy:
   - provider: elasticbeanstalk
