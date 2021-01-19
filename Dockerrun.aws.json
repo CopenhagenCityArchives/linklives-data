@@ -13,7 +13,7 @@
             "name": "linklives-elasticsearch",
             "image": "282251075226.dkr.ecr.eu-west-1.amazonaws.com/linklives-elasticsearch:{image-tag}",
             "essential": true,
-            "memory": 32000,
+            "memory": 28000,
             "environment":[
                 {
                     "name": "discovery.type",
@@ -21,7 +21,7 @@
                 },
                 {
                     "name": "ES_JAVA_OPTS",
-                    "value": "-Xms18g -Xmx18g"
+                    "value": "-Xms20g -Xmx20g"
                 }
             ],
             "portMappings": [
