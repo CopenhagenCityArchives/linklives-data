@@ -21,7 +21,7 @@
                 },
                 {
                     "name": "ES_JAVA_OPTS",
-                    "value": "-Xms20g -Xmx20g"
+                    "value": "-Xms8g -Xmx8g"
                 }
             ],
             "portMappings": [
