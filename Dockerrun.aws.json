@@ -4,7 +4,7 @@
         {
             "name": "elasticsearch-data",
             "host": {
-                "sourcePath": "/elasticsearch-data"
+                "sourcePath": "/elasticsearch-data-local"
             }
         }
     ],
